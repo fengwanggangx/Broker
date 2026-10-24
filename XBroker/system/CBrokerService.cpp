@@ -24,13 +24,13 @@ bool CBrokerService::Initialize()
 	}
 	if (nullptr == m_pTcpServer || nullptr == m_pSession)
 	{
-		m_strLastError = "Broker TCP server or HQMarket session is unavailable";
+		m_strLastError = "XBroker TCP server or HQMarket session is unavailable";
 		return false;
 	}
 	m_strToken = ini::CINIHandler::InstanceRef().GetValue(ini::Config::System, "Broker", "token", std::string());
 	if (m_strToken.empty())
 	{
-		m_strLastError = "Broker service token is required";
+		m_strLastError = "XBroker service token is required";
 		return false;
 	}
 	if (!m_trader.Initialize(*m_pSession))
@@ -94,7 +94,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 		response.SetId(request.GetId());
 		if (!bAuthorized)
 		{
-			response.SetErrorInfo(1, "Invalid Broker service token");
+			response.SetErrorInfo(1, "Invalid XBroker service token");
 		}
 		else
 		{
@@ -110,7 +110,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	}
 	if (!bAuthorized)
 	{
-		net::SendError(nConnection, request, 1, "Broker authentication required");
+		net::SendError(nConnection, request, 1, "XBroker authentication required");
 		return 1;
 	}
 	if (_TyRequest::HEARTBEAT == request.GetType())
@@ -143,7 +143,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 		m_trader.HandleTradingRequest(request);
 		break;
 	default:
-		net::SendError(nConnection, request, static_cast<int>(trade::Error::Unsupported), "Unsupported Broker request");
+		net::SendError(nConnection, request, static_cast<int>(trade::Error::Unsupported), "Unsupported XBroker request");
 		break;
 	}
 	return 1;

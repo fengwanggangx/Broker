@@ -33,7 +33,7 @@ bool CBootLoader::Initialize()
 	int nPort = config.GetValue(ini::Config::System, "Broker", "port", 9803);
 	if (strDatabase.empty() || 0 >= nPort || 65535 < nPort)
 	{
-		return Fail(2, "Broker database and valid port are required");
+		return Fail(2, "XBroker database and valid port are required");
 	}
 
 	CLoginInfo login;
@@ -53,7 +53,7 @@ bool CBootLoader::Initialize()
 	m_bDatabaseInitialized = true;
 	if (0 != CDBEngine::InstanceRef().Initialize(db::em_database::mysql, param, config.GetValue(ini::Config::System, "MySQL", "pool_size", 4)))
 	{
-		return Fail(3, "Broker MySQL initialization failed");
+		return Fail(3, "XBroker MySQL initialization failed");
 	}
 	bool bTablesReady = false;
 	{
@@ -62,7 +62,7 @@ bool CBootLoader::Initialize()
 	}
 	if (!bTablesReady)
 	{
-		return Fail(4, "Failed to initialize Broker MySQL tables");
+		return Fail(4, "Failed to initialize XBroker MySQL tables");
 	}
 
 	m_pMarket = std::make_unique<CSession>(login);
@@ -75,12 +75,12 @@ bool CBootLoader::Run()
 {
 	if (!m_bInitialized || nullptr == m_pTcpServer || nullptr == m_pMarket)
 	{
-		return Fail(6, "Broker boot loader is not initialized");
+		return Fail(6, "XBroker boot loader is not initialized");
 	}
 	if (0 != m_pTcpServer->Initialize())
 	{
 		m_nErrorCode = 6;
-		m_strLastError = "Broker TCP server initialization failed";
+		m_strLastError = "XBroker TCP server initialization failed";
 		return false;
 	}
 	if (!m_pMarket->Start())

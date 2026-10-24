@@ -1,5 +1,5 @@
-#ifndef BROKER_SYSTEM_CBOOTLOADER_H
-#define BROKER_SYSTEM_CBOOTLOADER_H
+#ifndef XBROKER_SYSTEM_CBOOTLOADER_H
+#define XBROKER_SYSTEM_CBOOTLOADER_H
 
 #include <filesystem>
 #include <memory>

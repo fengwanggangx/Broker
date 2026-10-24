@@ -1,5 +1,5 @@
-#ifndef BROKER_SYSTEM_CBROKERSERVICE_H
-#define BROKER_SYSTEM_CBROKERSERVICE_H
+#ifndef XBROKER_SYSTEM_CBROKERSERVICE_H
+#define XBROKER_SYSTEM_CBROKERSERVICE_H
 
 #include "../service/CTradeService.h"
 #include "../network/common_net.h"

@@ -15,7 +15,7 @@ int main()
 		CBrokerService brokerService(&boot.GetTcpServer(), &boot.GetSession());
 		if (!brokerService.Initialize())
 		{
-			std::cerr << "Broker request service initialization failed: " << brokerService.GetLastError() << '\n';
+			std::cerr << "XBroker request service initialization failed: " << brokerService.GetLastError() << '\n';
 			return 7;
 		}
 		if (!boot.Run())

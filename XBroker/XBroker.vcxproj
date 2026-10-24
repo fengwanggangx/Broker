@@ -37,7 +37,7 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{2AE74739-9A00-4588-AB88-D7657DAD1D3B}</ProjectGuid>
     <Keyword>Linux</Keyword>
-    <RootNamespace>Broker</RootNamespace>
+    <RootNamespace>XBroker</RootNamespace>
     <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
     <ApplicationType>Linux</ApplicationType>
     <ApplicationTypeRevision>1.0</ApplicationTypeRevision>

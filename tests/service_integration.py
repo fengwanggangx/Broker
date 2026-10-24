@@ -1,5 +1,5 @@
-"""Isolated Broker TCP + synthetic HQMarket integration. No production database access.
-Usage: python3 service_integration.py --binary /tmp/build/Broker --socket TEST_SOCKET --mysql-port 13307 [--xengine-probe /tmp/xengine/broker_client_probe]
+"""Isolated XBroker TCP + synthetic HQMarket integration. No production database access.
+Usage: python3 service_integration.py --binary /tmp/build/XBroker --socket TEST_SOCKET --mysql-port 13307 [--xengine-probe /tmp/xengine/broker_client_probe]
 """
 import argparse, contextlib, datetime, json, os, pathlib, socket, struct, subprocess, tempfile, threading, time
 
@@ -133,7 +133,7 @@ def main():
     try:
         with tempfile.TemporaryDirectory(prefix='broker-integration-') as directory:
             runtime = pathlib.Path(directory); (runtime/'ini').mkdir(); (runtime/'sql').mkdir()
-            source = pathlib.Path(__file__).resolve().parents[1]/'Broker'
+            source = pathlib.Path(__file__).resolve().parents[1]/'XBroker'
             (runtime/'sql/table_create.sql').write_text((source/'exec/debug/sql/table_create.sql').read_text())
             rules = json.loads((source/'counter/rules.example.json').read_text()); now = int(time.time()*1000); day = int(datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d'))
             rules['calendar'] = [dict(day=day, open_ms=now-3600000, break_ms=now+3600000, resume_ms=now+7200000, close_ms=now+10800000)]
@@ -145,10 +145,10 @@ def main():
             def start():
                 process = subprocess.Popen([str(pathlib.Path(args.binary).resolve())], cwd=runtime, env=env, stdout=log, stderr=log)
                 for _ in range(100):
-                    if process.poll() is not None: raise AssertionError('Broker exited: '+(runtime/'broker.log').read_text())
+                    if process.poll() is not None: raise AssertionError('XBroker exited: '+(runtime/'broker.log').read_text())
                     try: return process, Client(port)
                     except OSError: time.sleep(.1)
-                raise AssertionError('Broker startup timed out')
+                raise AssertionError('XBroker startup timed out')
             process, client = start()
             assert one(client.call(9),6) != 0, 'unauthenticated request accepted'
             assert one(client.call(1,token='wrong'),6) != 0, 'bad token accepted'
@@ -168,7 +168,7 @@ def main():
             client.ok(60,account_id=account_id)
             client.ok(13,account_id=account_id)
             client.ok(12,account_id=account_id)
-            assert market.subscribed.wait(5), 'Broker did not independently subscribe to HQMarket'
+            assert market.subscribed.wait(5), 'XBroker did not independently subscribe to HQMarket'
             time.sleep(.2)
             order_args = dict(account_id=account_id,client_order_id=201,security='600000.SSE',side='buy',order_type='limit',price=1000,price_scale=2,quantity=100,strategy_id=42,signal_id=43)
             reply = client.ok(49,**order_args)
@@ -213,16 +213,16 @@ def main():
                 assert any(one(event,1) == 56 for event in xtrader.events), 'XEngine did not forward trade push'
                 process.terminate(); process.wait(10)
                 time.sleep(1)
-                assert one(xtrader.call(49,**dict(xtrader_order,client_order_id=303,signal_id=303)),6) != 0, 'XEngine accepted order with Broker down'
+                assert one(xtrader.call(49,**dict(xtrader_order,client_order_id=303,signal_id=303)),6) != 0, 'XEngine accepted order with XBroker down'
                 xtrader.socket.close(); xengine_process.terminate(); xengine_process.wait(10); xengine_process = None
-                print('XTrader wire client -> XEngine -> Broker account login, submit, fill push, query, cancel and offline rejection passed')
+                print('XTrader wire client -> XEngine -> XBroker account login, submit, fill push, query, cancel and offline rejection passed')
                 # Default SIGTERM termination leaves the writer lease until expiry.
                 wait_lease()
                 process, client = start(); client.ok(1,token='broker-test')
             client.socket.close(); client = None
             process.terminate(); process.wait(10); wait_lease(); process, client = start(); client.ok(1,token='broker-test')
             sync = parse(one(client.ok(59,account_id=account_id),39)); assert len(sync.get(7,[])) >= 1, 'restart lost trades'
-            print('Broker TCP auth, account CRUD/connect, HQ depth matching, idempotency, cancellation, push and restart passed')
+            print('XBroker TCP auth, account CRUD/connect, HQ depth matching, idempotency, cancellation, push and restart passed')
     finally:
         if client is not None: client.socket.close()
         if process is not None and process.poll() is None: process.terminate(); process.wait(10)
