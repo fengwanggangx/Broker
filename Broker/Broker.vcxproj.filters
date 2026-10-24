@@ -1,0 +1,307 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <ItemGroup>
+    <Filter Include="basic">
+      <UniqueIdentifier>{f959fbba-f0d5-563c-b140-4f63a9a9a6ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="common">
+      <UniqueIdentifier>{87956d8e-d9f7-57c2-a2ae-4bd8aec467e5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="counter">
+      <UniqueIdentifier>{816ef932-a030-5438-b915-27fd340f037e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="database">
+      <UniqueIdentifier>{e1cadcc5-89b3-5028-a6a4-1efd807056ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ini">
+      <UniqueIdentifier>{4c8de154-ce90-5e29-a5bc-b6296f984d21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="network">
+      <UniqueIdentifier>{c31a5067-5bb0-5b91-ac3f-9d32551d4bec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="request">
+      <UniqueIdentifier>{0e64ff91-c9aa-5bc3-a84d-f078f259dd8b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="request\v1">
+      <UniqueIdentifier>{5527b1b1-a1d3-5593-bfa6-15bc0df96b21}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="service">
+      <UniqueIdentifier>{e3f388c9-7b32-5974-8640-ce420c441dc7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="system">
+      <UniqueIdentifier>{c674810d-2af5-5428-abcb-b1a8f1dc3b6f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="thread">
+      <UniqueIdentifier>{17bdf8cb-dd9b-59ef-8a56-38e1e0b7f977}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="common\container.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\container_traits.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\datetime.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\defines.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\ISingleton.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\modules.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\traits.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="common\utility.h">
+      <Filter>common</Filter>
+    </ClInclude>
+    <ClInclude Include="database\CDBEngine.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="database\CMySQL.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="database\CODBC.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="database\common_db.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="database\COracle.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="database\CQueryTable.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="database\CSQLite3.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="database\IDataBase.h">
+      <Filter>database</Filter>
+    </ClInclude>
+    <ClInclude Include="ini\CIniFile.h">
+      <Filter>ini</Filter>
+    </ClInclude>
+    <ClInclude Include="ini\CINIHandler.h">
+      <Filter>ini</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CFrameBuffer.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CHttpServer.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CNet.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CNetPool.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CNetRouter.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CNetTools.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\common_net.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CTcpClient.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\CTcpServer.h">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="thread\CThreadPool.h">
+      <Filter>thread</Filter>
+    </ClInclude>
+    <ClInclude Include="basic\CDistributor.h">
+      <Filter>basic</Filter>
+    </ClInclude>
+    <ClInclude Include="request\MarketTypes.h">
+      <Filter>request</Filter>
+    </ClInclude>
+    <ClInclude Include="request\request.h">
+      <Filter>request</Filter>
+    </ClInclude>
+    <ClInclude Include="request\request.pb.h">
+      <Filter>request</Filter>
+    </ClInclude>
+    <ClInclude Include="request\RequestCenter.h">
+      <Filter>request</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\CInProcessGateway.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\CounterSetup.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\CSimulatedCounter.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\CStateEdit.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\CStorager.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\ITradingGateway.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\TradeProtocol.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\TradeTypes.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="service\AccountInfo.h">
+      <Filter>service</Filter>
+    </ClInclude>
+    <ClInclude Include="service\CTradeService.h">
+      <Filter>service</Filter>
+    </ClInclude>
+    <ClInclude Include="service\CAdapterRegistry.h">
+      <Filter>service</Filter>
+    </ClInclude>
+    <ClInclude Include="system\CBrokerService.h">
+      <Filter>system</Filter>
+    </ClInclude>
+    <ClInclude Include="system\CHostMgr.h">
+      <Filter>system</Filter>
+    </ClInclude>
+    <ClInclude Include="system\CSession.h">
+      <Filter>system</Filter>
+    </ClInclude>
+    <ClInclude Include="request\v1\market.pb.h">
+      <Filter>request\v1</Filter>
+    </ClInclude>
+    <ClInclude Include="system\CBootLoader.h">
+      <Filter>system</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="common\datetime.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="common\defines.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="common\modules.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="common\utility.cpp">
+      <Filter>common</Filter>
+    </ClCompile>
+    <ClCompile Include="database\CDBEngine.cpp">
+      <Filter>database</Filter>
+    </ClCompile>
+    <ClCompile Include="database\CMySQL.cpp">
+      <Filter>database</Filter>
+    </ClCompile>
+    <ClCompile Include="database\CODBC.cpp">
+      <Filter>database</Filter>
+    </ClCompile>
+    <ClCompile Include="database\common_db.cpp">
+      <Filter>database</Filter>
+    </ClCompile>
+    <ClCompile Include="database\COracle.cpp">
+      <Filter>database</Filter>
+    </ClCompile>
+    <ClCompile Include="database\CSQLite3.cpp">
+      <Filter>database</Filter>
+    </ClCompile>
+    <ClCompile Include="database\IDataBase.cpp">
+      <Filter>database</Filter>
+    </ClCompile>
+    <ClCompile Include="ini\CIniFile.cpp">
+      <Filter>ini</Filter>
+    </ClCompile>
+    <ClCompile Include="ini\CINIHandler.cpp">
+      <Filter>ini</Filter>
+    </ClCompile>
+    <ClCompile Include="network\CFrameBuffer.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\CHttpServer.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\CNet.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\CNetPool.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\CNetTools.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\common_net.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\CTcpClient.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\CTcpServer.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="thread\CThreadPool.cpp">
+      <Filter>thread</Filter>
+    </ClCompile>
+    <ClCompile Include="basic\CDistributor.cpp">
+      <Filter>basic</Filter>
+    </ClCompile>
+    <ClCompile Include="request\MarketTypes.cpp">
+      <Filter>request</Filter>
+    </ClCompile>
+    <ClCompile Include="request\request.cpp">
+      <Filter>request</Filter>
+    </ClCompile>
+    <ClCompile Include="request\request.pb.cc">
+      <Filter>request</Filter>
+    </ClCompile>
+    <ClCompile Include="request\RequestCenter.cpp">
+      <Filter>request</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\CInProcessGateway.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\CounterSetup.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\CSimulatedCounter.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\CStorager.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\TradeProtocol.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\TradeTypes.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="service\CTradeService.cpp">
+      <Filter>service</Filter>
+    </ClCompile>
+    <ClCompile Include="system\CBrokerService.cpp">
+      <Filter>system</Filter>
+    </ClCompile>
+    <ClCompile Include="system\CHostMgr.cpp">
+      <Filter>system</Filter>
+    </ClCompile>
+    <ClCompile Include="system\CSession.cpp">
+      <Filter>system</Filter>
+    </ClCompile>
+    <ClCompile Include="request\v1\market.pb.cc">
+      <Filter>request\v1</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="system\CBootLoader.cpp">
+      <Filter>system</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

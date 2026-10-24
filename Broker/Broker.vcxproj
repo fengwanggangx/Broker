@@ -1,0 +1,219 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="Current">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|ARM">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM">
+      <Configuration>Release</Configuration>
+      <Platform>ARM</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64">
+      <Configuration>Debug</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x86">
+      <Configuration>Debug</Configuration>
+      <Platform>x86</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x86">
+      <Configuration>Release</Configuration>
+      <Platform>x86</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{2AE74739-9A00-4588-AB88-D7657DAD1D3B}</ProjectGuid>
+    <Keyword>Linux</Keyword>
+    <RootNamespace>Broker</RootNamespace>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+    <ApplicationType>Linux</ApplicationType>
+    <ApplicationTypeRevision>1.0</ApplicationTypeRevision>
+    <TargetLinuxPlatform>Generic</TargetLinuxPlatform>
+    <LinuxProjectType>{D51BCBC9-82E9-4017-911E-C93873C4EA2B}</LinuxProjectType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <RemoteCompileLocalCopyObjectFiles>true</RemoteCompileLocalCopyObjectFiles>
+    <CopyAdditionalIncludes>true</CopyAdditionalIncludes>
+    <RemoteOutDir>$(RemoteProjectDir)exec/debug/</RemoteOutDir>
+    <OutDir>$(ProjectDir)exec\debug\</OutDir>
+    <RemoteDeployDir>$(RemoteProjectDir)</RemoteDeployDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <RemoteCompileLocalCopyObjectFiles>true</RemoteCompileLocalCopyObjectFiles>
+    <RemoteOutDir>$(RemoteProjectDir)exec/release/</RemoteOutDir>
+    <LibraryPath>
+    </LibraryPath>
+    <OutDir>$(ProjectDir)exec\release\</OutDir>
+    <RemoteDeployDir>$(RemoteProjectDir)</RemoteDeployDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>./request;./include/debug/libevent;./include/debug/protobuf;./include/debug/mysql;./include/debug/ini;./include/debug/sqlite;./include/debug/rapidjson;%(ClCompile.AdditionalIncludeDirectories);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <CppLanguageStandard>c++20</CppLanguageStandard>
+      <PreprocessorDefinitions>WIND_DEBUG_BUILD;PROTOBUF_USE_DLLS;_SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>./libs/debug;%(Link.AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>'-Wl,-rpath,$ORIGIN/../../libs/debug' %(AdditionalOptions)</AdditionalOptions>
+      <LibraryDependencies>absl_bad_any_cast_impl;absl_bad_optional_access;absl_bad_variant_access;absl_base;absl_city;absl_civil_time;absl_cord;absl_cordz_functions;absl_cordz_handle;absl_cordz_info;absl_cordz_sample_token;absl_cord_internal;absl_crc32c;absl_crc_cord_state;absl_crc_cpu_detect;absl_crc_internal;absl_debugging_internal;absl_decode_rust_punycode;absl_demangle_internal;absl_demangle_rust;absl_die_if_null;absl_examine_stack;absl_exponential_biased;absl_failure_signal_handler;absl_flags_commandlineflag;absl_flags_commandlineflag_internal;absl_flags_config;absl_flags_internal;absl_flags_marshalling;absl_flags_parse;absl_flags_private_handle_accessor;absl_flags_program_name;absl_flags_reflection;absl_flags_usage;absl_flags_usage_internal;absl_graphcycles_internal;absl_hash;absl_hashtablez_sampler;absl_int128;absl_kernel_timeout_internal;absl_leak_check;absl_log_entry;absl_log_flags;absl_log_globals;absl_log_initialize;absl_log_internal_check_op;absl_log_internal_conditions;absl_log_internal_fnmatch;absl_log_internal_format;absl_log_internal_globals;absl_log_internal_log_sink_set;absl_log_internal_message;absl_log_internal_nullguard;absl_log_internal_proto;absl_log_internal_structured_proto;absl_log_severity;absl_log_sink;absl_low_level_hash;absl_malloc_internal;absl_periodic_sampler;absl_poison;absl_random_distributions;absl_random_internal_distribution_test_util;absl_random_internal_platform;absl_random_internal_pool_urbg;absl_random_internal_randen;absl_random_internal_randen_hwaes;absl_random_internal_randen_hwaes_impl;absl_random_internal_randen_slow;absl_random_internal_seed_material;absl_random_seed_gen_exception;absl_random_seed_sequences;absl_raw_hash_set;absl_raw_logging_internal;absl_scoped_set_env;absl_spinlock_wait;absl_stacktrace;absl_status;absl_statusor;absl_strerror;absl_strings;absl_strings_internal;absl_string_view;absl_str_format_internal;absl_symbolize;absl_synchronization;absl_throw_delegate;absl_time;absl_time_zone;absl_tracing_internal;absl_utf8_for_code_point;absl_vlog_config_internal;event;event_core;event_extra;event_openssl;event_pthreads;protobuf-lited;protobufd;protocd;upbd;utf8_range;utf8_validity;mysqlclient;sqlite3;%(LibraryDependencies)</LibraryDependencies>
+      <SharedLibrarySearchPath>./libs/debug;%(Link.SharedLibrarySearchPath)</SharedLibrarySearchPath>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>./request;./include/release/libevent;./include/release/protobuf;./include/release/mysql;./include/release/ini;./include/release/sqlite;./include/release/rapidjson;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <CppLanguageStandard>c++20</CppLanguageStandard>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>./libs/release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>'-Wl,-rpath,$ORIGIN/../../libs/release' %(AdditionalOptions)</AdditionalOptions>
+      <LibraryDependencies>absl_bad_any_cast_impl;absl_bad_optional_access;absl_bad_variant_access;absl_base;absl_city;absl_civil_time;absl_cord;absl_cordz_functions;absl_cordz_handle;absl_cordz_info;absl_cordz_sample_token;absl_cord_internal;absl_crc32c;absl_crc_cord_state;absl_crc_cpu_detect;absl_crc_internal;absl_debugging_internal;absl_decode_rust_punycode;absl_demangle_internal;absl_demangle_rust;absl_die_if_null;absl_examine_stack;absl_exponential_biased;absl_failure_signal_handler;absl_flags_commandlineflag;absl_flags_commandlineflag_internal;absl_flags_config;absl_flags_internal;absl_flags_marshalling;absl_flags_parse;absl_flags_private_handle_accessor;absl_flags_program_name;absl_flags_reflection;absl_flags_usage;absl_flags_usage_internal;absl_graphcycles_internal;absl_hash;absl_hashtablez_sampler;absl_int128;absl_kernel_timeout_internal;absl_leak_check;absl_log_entry;absl_log_flags;absl_log_globals;absl_log_initialize;absl_log_internal_check_op;absl_log_internal_conditions;absl_log_internal_fnmatch;absl_log_internal_format;absl_log_internal_globals;absl_log_internal_log_sink_set;absl_log_internal_message;absl_log_internal_nullguard;absl_log_internal_proto;absl_log_internal_structured_proto;absl_log_severity;absl_log_sink;absl_low_level_hash;absl_malloc_internal;absl_periodic_sampler;absl_poison;absl_random_distributions;absl_random_internal_distribution_test_util;absl_random_internal_platform;absl_random_internal_pool_urbg;absl_random_internal_randen;absl_random_internal_randen_hwaes;absl_random_internal_randen_hwaes_impl;absl_random_internal_randen_slow;absl_random_internal_seed_material;absl_random_seed_gen_exception;absl_random_seed_sequences;absl_raw_hash_set;absl_raw_logging_internal;absl_scoped_set_env;absl_spinlock_wait;absl_stacktrace;absl_status;absl_statusor;absl_strerror;absl_strings;absl_strings_internal;absl_string_view;absl_str_format_internal;absl_symbolize;absl_synchronization;absl_throw_delegate;absl_time;absl_time_zone;absl_tracing_internal;absl_utf8_for_code_point;absl_vlog_config_internal;event;event_core;event_extra;event_openssl;event_pthreads;protobuf-lite;protobuf;protoc;upb;utf8_range;utf8_validity;mysqlclient;sqlite3;%(LibraryDependencies)</LibraryDependencies>
+      <SharedLibrarySearchPath>%(Link.SharedLibrarySearchPath)</SharedLibrarySearchPath>
+    </Link>
+    <PreLinkEvent>
+      <Command>
+      </Command>
+    </PreLinkEvent>
+    <RemotePreBuildEvent>
+      <Command>
+      </Command>
+    </RemotePreBuildEvent>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+  <ItemGroup>
+    <ClInclude Include="common\container.h" />
+    <ClInclude Include="common\container_traits.h" />
+    <ClCompile Include="common\datetime.cpp" />
+    <ClInclude Include="common\datetime.h" />
+    <ClCompile Include="common\defines.cpp" />
+    <ClInclude Include="common\defines.h" />
+    <ClInclude Include="common\ISingleton.h" />
+    <ClCompile Include="common\modules.cpp" />
+    <ClInclude Include="common\modules.h" />
+    <ClInclude Include="common\traits.h" />
+    <ClCompile Include="common\utility.cpp" />
+    <ClInclude Include="common\utility.h" />
+    <ClCompile Include="database\CDBEngine.cpp" />
+    <ClInclude Include="database\CDBEngine.h" />
+    <ClCompile Include="database\CMySQL.cpp" />
+    <ClInclude Include="database\CMySQL.h" />
+    <ClCompile Include="database\CODBC.cpp" />
+    <ClInclude Include="database\CODBC.h" />
+    <ClCompile Include="database\common_db.cpp" />
+    <ClInclude Include="database\common_db.h" />
+    <ClCompile Include="database\COracle.cpp" />
+    <ClInclude Include="database\COracle.h" />
+    <ClInclude Include="database\CQueryTable.h" />
+    <ClCompile Include="database\CSQLite3.cpp" />
+    <ClInclude Include="database\CSQLite3.h" />
+    <ClCompile Include="database\IDataBase.cpp" />
+    <ClInclude Include="database\IDataBase.h" />
+    <ClCompile Include="ini\CIniFile.cpp" />
+    <ClInclude Include="ini\CIniFile.h" />
+    <ClCompile Include="ini\CINIHandler.cpp" />
+    <ClInclude Include="ini\CINIHandler.h" />
+    <ClCompile Include="network\CFrameBuffer.cpp" />
+    <ClInclude Include="network\CFrameBuffer.h" />
+    <ClCompile Include="network\CHttpServer.cpp" />
+    <ClInclude Include="network\CHttpServer.h" />
+    <ClCompile Include="network\CNet.cpp" />
+    <ClInclude Include="network\CNet.h" />
+    <ClCompile Include="network\CNetPool.cpp" />
+    <ClInclude Include="network\CNetPool.h" />
+    <ClInclude Include="network\CNetRouter.h" />
+    <ClCompile Include="network\CNetTools.cpp" />
+    <ClInclude Include="network\CNetTools.h" />
+    <ClCompile Include="network\common_net.cpp" />
+    <ClInclude Include="network\common_net.h" />
+    <ClCompile Include="network\CTcpClient.cpp" />
+    <ClInclude Include="network\CTcpClient.h" />
+    <ClCompile Include="network\CTcpServer.cpp" />
+    <ClInclude Include="network\CTcpServer.h" />
+    <ClCompile Include="thread\CThreadPool.cpp" />
+    <ClInclude Include="thread\CThreadPool.h" />
+    <ClCompile Include="basic\CDistributor.cpp" />
+    <ClInclude Include="basic\CDistributor.h" />
+    <ClCompile Include="request\MarketTypes.cpp" />
+    <ClInclude Include="request\MarketTypes.h" />
+    <ClCompile Include="request\request.cpp" />
+    <ClInclude Include="request\request.h" />
+    <ClCompile Include="request\request.pb.cc" />
+    <ClInclude Include="request\request.pb.h" />
+    <ClCompile Include="request\RequestCenter.cpp" />
+    <ClInclude Include="request\RequestCenter.h" />
+    <ClCompile Include="counter\CInProcessGateway.cpp" />
+    <ClInclude Include="counter\CInProcessGateway.h" />
+    <ClCompile Include="counter\CounterSetup.cpp" />
+    <ClInclude Include="counter\CounterSetup.h" />
+    <ClCompile Include="counter\CSimulatedCounter.cpp" />
+    <ClInclude Include="counter\CSimulatedCounter.h" />
+    <ClInclude Include="counter\CStateEdit.h" />
+    <ClCompile Include="counter\CStorager.cpp" />
+    <ClInclude Include="counter\CStorager.h" />
+    <ClInclude Include="counter\ITradingGateway.h" />
+    <ClCompile Include="counter\TradeProtocol.cpp" />
+    <ClInclude Include="counter\TradeProtocol.h" />
+    <ClCompile Include="counter\TradeTypes.cpp" />
+    <ClInclude Include="counter\TradeTypes.h" />
+    <ClInclude Include="service\AccountInfo.h" />
+    <ClCompile Include="service\CTradeService.cpp" />
+    <ClInclude Include="service\CTradeService.h" />
+    <ClInclude Include="service\CAdapterRegistry.h" />
+    <ClCompile Include="system\CBrokerService.cpp" />
+    <ClInclude Include="system\CBrokerService.h" />
+    <ClCompile Include="system\CBootLoader.cpp" />
+    <ClInclude Include="system\CBootLoader.h" />
+    <ClCompile Include="system\CHostMgr.cpp" />
+    <ClInclude Include="system\CHostMgr.h" />
+    <ClCompile Include="system\CSession.cpp" />
+    <ClInclude Include="system\CSession.h" />
+    <ClCompile Include="request\v1\market.pb.cc" />
+    <ClInclude Include="request\v1\market.pb.h" />
+    <ClCompile Include="main.cpp" />
+  </ItemGroup>
+</Project>
