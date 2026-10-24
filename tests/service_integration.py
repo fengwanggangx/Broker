@@ -1,5 +1,5 @@
 """Isolated Broker TCP + synthetic HQMarket integration. No production database access.
-Usage: python3 service_integration.py --binary /tmp/build/Broker --socket TEST_SOCKET --mysql-port 13307 [--wind-probe /tmp/wind/broker_client_probe]
+Usage: python3 service_integration.py --binary /tmp/build/Broker --socket TEST_SOCKET --mysql-port 13307 [--xengine-probe /tmp/xengine/broker_client_probe]
 """
 import argparse, contextlib, datetime, json, os, pathlib, socket, struct, subprocess, tempfile, threading, time
 
@@ -118,7 +118,7 @@ def fault_probe(binary, env):
     finally: listener.close()
 
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('--binary', required=True); parser.add_argument('--socket', required=True); parser.add_argument('--mysql-port', type=int, required=True); parser.add_argument('--wind-probe'); parser.add_argument('--wind-binary'); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument('--binary', required=True); parser.add_argument('--socket', required=True); parser.add_argument('--mysql-port', type=int, required=True); parser.add_argument('--xengine-probe'); parser.add_argument('--xengine-binary'); args = parser.parse_args()
     database = 'xtrade_broker_test_' + str(os.getpid())
     def sql(query): subprocess.run(['mysql','--socket='+args.socket,'-uroot','-e',query], check=True, stdout=subprocess.DEVNULL)
     def wait_lease():
@@ -129,7 +129,7 @@ def main():
             time.sleep(.2)
         raise AssertionError('terminated writer lease did not expire')
     sql('CREATE DATABASE '+database)
-    market = Market(); process = None; client = None; wind_process = None; wind_database = None; wind_user = None
+    market = Market(); process = None; client = None; xengine_process = None; xengine_database = None; xengine_user = None
     try:
         with tempfile.TemporaryDirectory(prefix='broker-integration-') as directory:
             runtime = pathlib.Path(directory); (runtime/'ini').mkdir(); (runtime/'sql').mkdir()
@@ -179,43 +179,43 @@ def main():
             order = parse(one(parse(one(client.ok(49,**order_args),36)),1)); order_id = one(order,3)
             cancelled = parse(one(parse(one(client.ok(50,account_id=account_id,order_id=order_id),36)),1)); assert one(cancelled,9) == 3
             assert any(one(event,1) == 56 for event in client.events), 'no trade push'
-            if args.wind_probe:
-                subprocess.run([args.wind_probe,str(port),'broker-test',str(account_id)], env=env, check=True, timeout=30)
-                fault_probe(args.wind_probe, env)
-            if args.wind_binary:
-                wind_database = database + '_wind'; wind_user = database + '_user'
-                sql('CREATE DATABASE '+wind_database)
-                sql("CREATE USER '"+wind_user+"'@'127.0.0.1' IDENTIFIED BY 'test-only-password'")
-                sql("GRANT ALL ON "+wind_database+".* TO '"+wind_user+"'@'127.0.0.1'")
-                wind_runtime = runtime/'wind'; (wind_runtime/'ini').mkdir(parents=True); (wind_runtime/'sql').mkdir()
-                wind_source = source.parents[1]/'Wind/Wind'
-                (wind_runtime/'sql/table_create.sql').write_text((wind_source/'exec/debug/sql/table_create.sql').read_text())
-                wind_port = free_port(); http_port = free_port()
-                (wind_runtime/'ini/system.ini').write_text(f'[System]\n' + f'tcp_port={wind_port}\nhttp_port={http_port}\n[Server]\nhost0=HQ_127.0.0.1_{market.port}_1\n[HQMarket]\naccount=test\npassword=test-only-password\n[MySQL]\nhost=127.0.0.1\nport={args.mysql_port}\naccount={wind_user}\npassword=test-only-password\ndatabase={wind_database}\npool_size=4\n[Broker]\nhost=127.0.0.1\nport={port}\ntoken=broker-test\n')
-                wind_log = open(runtime/'wind.log','w')
-                wind_process = subprocess.Popen([str(pathlib.Path(args.wind_binary).resolve())],cwd=wind_runtime,env=env,stdout=wind_log,stderr=wind_log)
+            if args.xengine_probe:
+                subprocess.run([args.xengine_probe,str(port),'broker-test',str(account_id)], env=env, check=True, timeout=30)
+                fault_probe(args.xengine_probe, env)
+            if args.xengine_binary:
+                xengine_database = database + '_wind'; xengine_user = database + '_user'
+                sql('CREATE DATABASE '+xengine_database)
+                sql("CREATE USER '"+xengine_user+"'@'127.0.0.1' IDENTIFIED BY 'test-only-password'")
+                sql("GRANT ALL ON "+xengine_database+".* TO '"+xengine_user+"'@'127.0.0.1'")
+                xengine_runtime = runtime/'xengine'; (xengine_runtime/'ini').mkdir(parents=True); (xengine_runtime/'sql').mkdir()
+                xengine_source = source.parents[1]/'XEngine/XEngine'
+                (xengine_runtime/'sql/table_create.sql').write_text((xengine_source/'exec/debug/sql/table_create.sql').read_text())
+                xengine_port = free_port(); http_port = free_port()
+                (xengine_runtime/'ini/system.ini').write_text(f'[System]\n' + f'tcp_port={xengine_port}\nhttp_port={http_port}\n[Server]\nhost0=HQ_127.0.0.1_{market.port}_1\n[HQMarket]\naccount=test\npassword=test-only-password\n[MySQL]\nhost=127.0.0.1\nport={args.mysql_port}\naccount={xengine_user}\npassword=test-only-password\ndatabase={xengine_database}\npool_size=4\n[Broker]\nhost=127.0.0.1\nport={port}\ntoken=broker-test\n')
+                xengine_log = open(runtime/'xengine.log','w')
+                xengine_process = subprocess.Popen([str(pathlib.Path(args.xengine_binary).resolve())],cwd=xengine_runtime,env=env,stdout=xengine_log,stderr=xengine_log)
                 for _ in range(100):
-                    if wind_process.poll() is not None: raise AssertionError('Wind exited: '+(runtime/'wind.log').read_text())
-                    try: mary = Client(wind_port); break
+                    if xengine_process.poll() is not None: raise AssertionError('XEngine exited: '+(runtime/'xengine.log').read_text())
+                    try: xtrader = Client(xengine_port); break
                     except OSError: time.sleep(.1)
-                else: raise AssertionError('Wind startup timeout')
-                mary.ok(3,user='test-user',password='test-password')
-                mary.ok(1,user='test-user',password='test-password')
-                record = parse(one(mary.ok(10,name='mary-account',initial_balance=10000000),30)); mary_account = one(record,1)
-                mary.ok(8,broker='wind_simulated',site='default',account='SIM-'+str(mary_account),password='test-password')
+                else: raise AssertionError('XEngine startup timeout')
+                xtrader.ok(3,user='test-user',password='test-password')
+                xtrader.ok(1,user='test-user',password='test-password')
+                record = parse(one(xtrader.ok(10,name='xtrader-account',initial_balance=10000000),30)); xtrader_account = one(record,1)
+                xtrader.ok(8,broker='wind_simulated',site='default',account='SIM-'+str(xtrader_account),password='test-password')
                 time.sleep(2)
-                mary_order = dict(order_args,account_id=mary_account,client_order_id=301,price=1000,signal_id=301)
-                filled = parse(one(parse(one(mary.ok(49,**mary_order),36)),1)); assert one(filled,13) == 100 and one(filled,4) == mary.next_id
-                mary_order.update(client_order_id=302,price=900,signal_id=302)
-                pending = parse(one(parse(one(mary.ok(49,**mary_order),36)),1))
-                mary.ok(50,account_id=mary_account,order_id=one(pending,3))
-                mary.ok(51,account_id=mary_account); mary.ok(52,account_id=mary_account); mary.ok(53,account_id=mary_account)
-                assert any(one(event,1) == 56 for event in mary.events), 'Wind did not forward trade push'
+                xtrader_order = dict(order_args,account_id=xtrader_account,client_order_id=301,price=1000,signal_id=301)
+                filled = parse(one(parse(one(xtrader.ok(49,**xtrader_order),36)),1)); assert one(filled,13) == 100 and one(filled,4) == xtrader.next_id
+                xtrader_order.update(client_order_id=302,price=900,signal_id=302)
+                pending = parse(one(parse(one(xtrader.ok(49,**xtrader_order),36)),1))
+                xtrader.ok(50,account_id=xtrader_account,order_id=one(pending,3))
+                xtrader.ok(51,account_id=xtrader_account); xtrader.ok(52,account_id=xtrader_account); xtrader.ok(53,account_id=xtrader_account)
+                assert any(one(event,1) == 56 for event in xtrader.events), 'XEngine did not forward trade push'
                 process.terminate(); process.wait(10)
                 time.sleep(1)
-                assert one(mary.call(49,**dict(mary_order,client_order_id=303,signal_id=303)),6) != 0, 'Wind accepted order with Broker down'
-                mary.socket.close(); wind_process.terminate(); wind_process.wait(10); wind_process = None
-                print('Mary wire client -> Wind -> Broker account login, submit, fill push, query, cancel and offline rejection passed')
+                assert one(xtrader.call(49,**dict(xtrader_order,client_order_id=303,signal_id=303)),6) != 0, 'XEngine accepted order with Broker down'
+                xtrader.socket.close(); xengine_process.terminate(); xengine_process.wait(10); xengine_process = None
+                print('XTrader wire client -> XEngine -> Broker account login, submit, fill push, query, cancel and offline rejection passed')
                 # Default SIGTERM termination leaves the writer lease until expiry.
                 wait_lease()
                 process, client = start(); client.ok(1,token='broker-test')
@@ -227,8 +227,8 @@ def main():
         if client is not None: client.socket.close()
         if process is not None and process.poll() is None: process.terminate(); process.wait(10)
         market.close()
-        if wind_process is not None and wind_process.poll() is None: wind_process.terminate(); wind_process.wait(10)
-        if wind_database is not None: sql('DROP DATABASE '+wind_database)
-        if wind_user is not None: sql("DROP USER '"+wind_user+"'@'127.0.0.1'")
+        if xengine_process is not None and xengine_process.poll() is None: xengine_process.terminate(); xengine_process.wait(10)
+        if xengine_database is not None: sql('DROP DATABASE '+xengine_database)
+        if xengine_user is not None: sql("DROP USER '"+xengine_user+"'@'127.0.0.1'")
         sql('DROP DATABASE '+database)
 if __name__ == '__main__': main()

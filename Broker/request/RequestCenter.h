@@ -1,5 +1,5 @@
-#ifndef WIND_SYSTEM_REQUESTCENTER_H
-#define WIND_SYSTEM_REQUESTCENTER_H
+#ifndef XENGINE_SYSTEM_REQUESTCENTER_H
+#define XENGINE_SYSTEM_REQUESTCENTER_H
 
 #include "../request/request.h"
 #include "MarketTypes.h"
@@ -23,6 +23,6 @@ namespace request
 	CRequest QueryBars(const CSecurity& security, Channel channel, std::int64_t nBeginTime, std::int64_t nEndTime);
 	CRequest QuerySecurities();
 	CRequest HeartBeat();
-}
+} // namespace request
 
 #endif

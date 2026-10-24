@@ -1,5 +1,5 @@
-#ifndef WIND_NETWORK_CTCPCLIENT_H
-#define WIND_NETWORK_CTCPCLIENT_H
+#ifndef XENGINE_NETWORK_CTCPCLIENT_H
+#define XENGINE_NETWORK_CTCPCLIENT_H
 #include "CNet.h"
 #include "CNetRouter.h"
 #include "common_net.h"

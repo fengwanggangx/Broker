@@ -1,5 +1,5 @@
-#ifndef MARY_CONFIGURATION_CSERVERSETTINGS_H
-#define MARY_CONFIGURATION_CSERVERSETTINGS_H
+#ifndef XTRADER_CONFIGURATION_CSERVERSETTINGS_H
+#define XTRADER_CONFIGURATION_CSERVERSETTINGS_H
 
 #include "../common/ISingleton.h"
 
@@ -26,10 +26,10 @@ struct CHostInfo
 
 class CHostMgr final
 {
-public:
+	public:
 	CHostMgr();
 
-public:
+	public:
 	std::string Key() const;
 	const std::map<std::string, CHostInfo>& GetHosts() const;
 	std::optional<CHostInfo> GetActiveHost() const;
@@ -37,10 +37,10 @@ public:
 	bool SetConnectFast(bool enabled);
 	bool IsConnectFast() const;
 
-private:
+	private:
 	void Initialize();
 
-private:
+	private:
 	bool m_bConnectFast{ false };
 	std::map<std::string, CHostInfo> m_hosts;
 };

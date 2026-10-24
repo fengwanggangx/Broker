@@ -1,5 +1,5 @@
-#ifndef WIND_HQMARKET_CSESSION_H
-#define WIND_HQMARKET_CSESSION_H
+#ifndef XENGINE_HQMARKET_CSESSION_H
+#define XENGINE_HQMARKET_CSESSION_H
 
 #include "../system/CHostMgr.h"
 #include "../request/request.h"
