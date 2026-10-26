@@ -123,8 +123,6 @@
       </Command>
     </RemotePreBuildEvent>
   </ItemDefinitionGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets" />
   <ItemGroup>
     <ClInclude Include="common\container.h" />
     <ClInclude Include="common\container_traits.h" />
@@ -216,4 +214,10 @@
     <ClInclude Include="request\v1\market.pb.h" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="libs\debug\**\*" />
+    <None Include="libs\release\**\*" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
 </Project>

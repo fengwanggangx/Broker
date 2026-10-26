@@ -304,4 +304,23 @@
       <Filter>system</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="libs">
+      <UniqueIdentifier>{cc985fb8-f58f-4d82-88a1-20c118ee5cce}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libs\debug">
+      <UniqueIdentifier>{b4479080-171f-46e6-b2fa-c65a197881e8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libs\release">
+      <UniqueIdentifier>{e7e7220d-241c-4b32-b397-2ccb7bbc4be1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="libs\debug\**\*">
+      <Filter>libs\debug</Filter>
+    </None>
+    <None Include="libs\release\**\*">
+      <Filter>libs\release</Filter>
+    </None>
+  </ItemGroup>
 </Project>
