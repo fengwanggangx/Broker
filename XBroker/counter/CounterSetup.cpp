@@ -1,5 +1,5 @@
 #include "CounterSetup.h"
-#include "CInProcessGateway.h"
+#include "CSimulatedCounter.h"
 #include "CStorager.h"
 #include "../system/CSession.h"
 #include "../common/utility.h"
@@ -81,7 +81,7 @@ namespace trade
 			return {};
 		}
 	} // namespace
-	CResult InitializeCounter(const std::unordered_map<std::uint64_t, CTradeAccount>& accounts, const std::string& strRulesPath, CSession& session, std::shared_ptr<CInProcessGateway>& counter)
+	CResult InitializeCounter(const std::unordered_map<std::uint64_t, CTradeAccount>& accounts, const std::string& strRulesPath, CSession& session, std::shared_ptr<CSimulatedCounter>& counter)
 	{
 		std::vector<CRule> rules;
 		std::vector<CCalendar> calendar;
@@ -91,7 +91,7 @@ namespace trade
 			return result;
 		}
 		std::unique_ptr<ICounterStore> store = std::make_unique<CStorager>(utility::MakeSaltHex());
-		std::shared_ptr<CInProcessGateway> gateway = std::make_shared<CInProcessGateway>(std::make_unique<CSimulatedCounter>(std::move(store)), Now);
+		std::shared_ptr<CSimulatedCounter> gateway = std::make_shared<CSimulatedCounter>(std::make_unique<CSimulatedCore>(std::move(store)), Now);
 		std::vector<CAccount> counterAccounts;
 		counterAccounts.reserve(accounts.size());
 		for (const auto& [accountId, account] : accounts)
@@ -106,10 +106,10 @@ namespace trade
 		{
 			return result;
 		}
-		std::weak_ptr<CInProcessGateway> weak = gateway;
+		std::weak_ptr<CSimulatedCounter> weak = gateway;
 		session.RegisterHandler([weak](const ::CRequest& request)
 		{
-			std::shared_ptr<CInProcessGateway> target = weak.lock();
+			std::shared_ptr<CSimulatedCounter> target = weak.lock();
 			if ((nullptr == target) || !request.GetData().has_depth())
 			{
 				return;
@@ -159,7 +159,7 @@ namespace trade
 		}
 		auto subscribe = [weak, &session, depthSecurities](SessionState state, const std::string&)
 		{
-			std::shared_ptr<CInProcessGateway> target = weak.lock();
+			std::shared_ptr<CSimulatedCounter> target = weak.lock();
 			if (nullptr == target)
 			{
 				return;

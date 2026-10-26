@@ -1,6 +1,6 @@
 #include "CTradeService.h"
 #include "../common/utility.h"
-#include "../counter/CInProcessGateway.h"
+#include "../counter/CSimulatedCounter.h"
 #include "../counter/TradeProtocol.h"
 #include "../database/CDBEngine.h"
 #include "../database/IDataBase.h"
@@ -325,10 +325,10 @@ const std::string& CTradeService::GetLastError() const
 {
 	return m_strLastError;
 }
-bool CTradeService::HandleAccountRequest(const CRequest& req, const std::string& actor)
+bool CTradeService::HandleAccountRequest(const CRequest& req)
 {
 	std::lock_guard<std::mutex> lock(m_mtx_operations);
-	return DispatchRequest(req, actor);
+	return DispatchRequest(req, req.GetExtraData("actor"));
 }
 bool CTradeService::DispatchRequest(const CRequest& req, const std::string& actor)
 {
@@ -355,7 +355,7 @@ bool CTradeService::HandleAccountInfo(const CRequest& req, const std::string&)
 		std::size_t m_nRemaining{ 0 };
 	};
 	std::shared_ptr<CBatch> batch = std::make_shared<CBatch>();
-	std::map<std::shared_ptr<trade::ITradingGateway>, std::vector<std::uint64_t>, std::owner_less<std::shared_ptr<trade::ITradingGateway>>> groups;
+	std::map<std::shared_ptr<trade::ITradeCounter>, std::vector<std::uint64_t>, std::owner_less<std::shared_ptr<trade::ITradeCounter>>> groups;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		if (ids.empty())
@@ -461,7 +461,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req, const std::string&)
 		net::SendError(req.GetConnectionId(), req, 1202, "broker/site/account/password required");
 		return false;
 	}
-	std::shared_ptr<trade::ITradingGateway> service;
+	std::shared_ptr<trade::ITradeCounter> service;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		for (const auto& item : m_accounts)
@@ -649,7 +649,7 @@ bool CTradeService::HandleAccountConnection(const CRequest& req, const std::stri
 		return AccountError(*pDB, req, actor, accountId, "账户不存在");
 	}
 	_TyRequest type = req.GetType();
-	std::shared_ptr<trade::ITradingGateway> service;
+	std::shared_ptr<trade::ITradeCounter> service;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		CTradeAccount& account = m_accounts.at(accountId);
@@ -777,7 +777,7 @@ void CTradeService::OnEvent(const trade::CEvent& event)
 		pushHandler(push);
 	}
 }
-bool CTradeService::HandleTradingRequest(const CRequest& req)
+bool CTradeService::HandleTradeRequest(const CRequest& req)
 {
 	return DispatchRequest(req, std::string());
 }
@@ -841,14 +841,14 @@ bool CTradeService::HandleTradeQuery(const CRequest& req, const std::string&)
 	operation.m_operation = trade::Operation::Trades;
 	return ExecuteTrading(req, std::move(operation));
 }
-std::shared_ptr<trade::ITradingGateway> CTradeService::FindGateway(const CRequest& req, std::uint64_t& nAccountId) const
+std::shared_ptr<trade::ITradeCounter> CTradeService::FindGateway(const CRequest& req, std::uint64_t& nAccountId) const
 {
 	if (!ReadId(req.GetExtraData("account_id"), nAccountId))
 	{
 		net::SendError(req.GetConnectionId(), req, 1202, "account_id required");
 		return nullptr;
 	}
-	std::shared_ptr<trade::ITradingGateway> service;
+	std::shared_ptr<trade::ITradeCounter> service;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		auto iter = m_accounts.find(nAccountId);
@@ -866,7 +866,7 @@ std::shared_ptr<trade::ITradingGateway> CTradeService::FindGateway(const CReques
 bool CTradeService::HandleCapabilities(const CRequest& req, const std::string&)
 {
 	std::uint64_t nAccountId = 0;
-	std::shared_ptr<trade::ITradingGateway> service = FindGateway(req, nAccountId);
+	std::shared_ptr<trade::ITradeCounter> service = FindGateway(req, nAccountId);
 	if (nullptr == service)
 	{
 		return false;
@@ -888,7 +888,7 @@ bool CTradeService::HandleCapabilities(const CRequest& req, const std::string&)
 bool CTradeService::ExecuteTrading(const CRequest& req, trade::CRequest&& operation)
 {
 	operation.m_requestId = SourceId(req);
-	std::shared_ptr<trade::ITradingGateway> service = FindGateway(req, operation.m_accountId);
+	std::shared_ptr<trade::ITradeCounter> service = FindGateway(req, operation.m_accountId);
 	if (nullptr == service)
 	{
 		return false;

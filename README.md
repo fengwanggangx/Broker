@@ -1,6 +1,6 @@
 # XBroker 交易服务
 
-XBroker 与 XEngine、HQMarket 同级，是独立的 C++20 Linux 服务。首期包含模拟柜台；券商 SDK 通过 `service/CAdapterRegistry.h` 注册工厂，返回 `ITradingGateway`。真实券商尚未接入。
+XBroker 与 XEngine、HQMarket 同级，是独立的 C++20 Linux 服务。首期包含模拟柜台；券商 SDK 通过 `service/CAdapterRegistry.h` 注册工厂，返回 `ITradeCounter`。真实券商尚未接入。
 
 ## 职责与接口
 

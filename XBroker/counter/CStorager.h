@@ -1,5 +1,5 @@
 #pragma once
-#include "ITradingGateway.h"
+#include "ITradeCounter.h"
 #include "../database/IDataBase.h"
 
 namespace trade

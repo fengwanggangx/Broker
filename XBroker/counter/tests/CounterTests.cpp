@@ -1,5 +1,5 @@
+#include "CSimulatedCore.h"
 #include "CSimulatedCounter.h"
-#include "CInProcessGateway.h"
 #include <iostream>
 #include <stdexcept>
 #include <future>
@@ -83,12 +83,12 @@ namespace
 		request.m_order.m_strSecurity = "600000.SSE";
 		return request;
 	}
-	void Connect(CSimulatedCounter& counter, Id nId, std::int64_t nNow)
+	void Connect(CSimulatedCore& counter, Id nId, std::int64_t nNow)
 	{
 		Check(counter.Execute(Request(Operation::Connect, nId), nNow).m_result.Ok(), "connect");
 	}
 
-	class CDeferredBroker final : public ITradingGateway
+	class CDeferredBroker final : public ITradeCounter
 	{
 		public:
 		CResult Request(CRequest request, ReplyHandler handler) override
@@ -154,7 +154,7 @@ namespace
 		EventHandler m_handler;
 		std::deque<std::function<void()>> m_work;
 	};
-	void Contract(ITradingGateway& gateway, const std::function<void()>& pump)
+	void Contract(ITradeCounter& gateway, const std::function<void()>& pump)
 	{
 		std::atomic_int events{ 0 };
 		gateway.SetEventHandler([&events](const CEvent& event)
@@ -191,7 +191,7 @@ namespace
 	void Boundaries()
 	{
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
-		CSimulatedCounter counter(std::make_unique<CStore>(memory));
+		CSimulatedCore counter(std::make_unique<CStore>(memory));
 		Check(counter.Start(0).Ok(), "boundary start");
 		Check(counter.AddAccount(1, 1000000).Ok(), "boundary account");
 		Connect(counter, 1, 1100);
@@ -219,7 +219,7 @@ namespace
 		Check(counter.Execute(cancel, 1200).m_result.Ok(), "terminal cancel idempotent");
 		counter.Stop();
 		std::shared_ptr<CMemory> asyncMemory = std::make_shared<CMemory>();
-		CInProcessGateway gateway(std::make_unique<CSimulatedCounter>(std::make_unique<CStore>(asyncMemory)), []()
+		CSimulatedCounter gateway(std::make_unique<CSimulatedCore>(std::make_unique<CStore>(asyncMemory)), []()
 		{
 			return 1100;
 		});
@@ -269,7 +269,7 @@ namespace
 	void Run()
 	{
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
-		CSimulatedCounter counter(std::make_unique<CStore>(memory));
+		CSimulatedCore counter(std::make_unique<CStore>(memory));
 		Check(counter.Start(0).Ok(), "start");
 		Check(counter.AddAccount(1, 1000000).Ok() && counter.AddAccount(2, 1000000).Ok(), "migration");
 		Check(counter.ImportRules({ Rule(1), Rule(2) }, { { 1, 1000, 2000, 3000, 4000 }, { 2, 5000, 6000, 7000, 8000 } }).Ok(), "rules");
@@ -313,7 +313,7 @@ namespace
 		Check(!DecodeState(strSaved + " bad", restored), "bad codec");
 		std::int64_t nCash = counter.Snapshot(1, 5100).m_accounts[0].m_nBalance;
 		counter.Stop();
-		CSimulatedCounter restarted(std::make_unique<CStore>(memory));
+		CSimulatedCore restarted(std::make_unique<CStore>(memory));
 		Check(restarted.Start(5200).Ok(), "restart");
 		Check(nCash == restarted.Snapshot(1, 5200).m_accounts[0].m_nBalance, "cash persisted");
 		Connect(restarted, 1, 5200);
@@ -329,7 +329,7 @@ namespace
 		Check(restarted.Snapshot(1, 5200).m_accounts[0].m_nFrozen == memory->m_state.m_accounts.at(1).m_nFrozen, "failed cancellation restores in-memory freeze");
 		restarted.Stop();
 		memory->m_bFail = false;
-		CSimulatedCounter replay(std::make_unique<CStore>(memory));
+		CSimulatedCore replay(std::make_unique<CStore>(memory));
 		Check(replay.Start(5300).Ok() && !replay.EventsAfter(nVersion).empty(), "replay");
 		memory->m_bLease = false;
 		Check(!replay.Renew().Ok() && !replay.Ready(), "fencing");

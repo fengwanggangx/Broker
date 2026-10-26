@@ -1,5 +1,5 @@
 #pragma once
-#include "../counter/ITradingGateway.h"
+#include "../counter/ITradeCounter.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -18,12 +18,12 @@ namespace trade
 	class CAdapterRegistry final
 	{
 		public:
-		using Factory = std::function<std::shared_ptr<ITradingGateway>(const CAdapterConfig&)>;
+		using Factory = std::function<std::shared_ptr<ITradeCounter>(const CAdapterConfig&)>;
 		bool Register(const std::string& strKey, Factory factory)
 		{
 			return !strKey.empty() && nullptr != factory && m_factories.emplace(strKey, std::move(factory)).second;
 		}
-		std::shared_ptr<ITradingGateway> Create(const CAdapterConfig& config) const
+		std::shared_ptr<ITradeCounter> Create(const CAdapterConfig& config) const
 		{
 			auto iter = m_factories.find(config.m_strAdapter);
 			return m_factories.end() == iter ? nullptr : iter->second(config);

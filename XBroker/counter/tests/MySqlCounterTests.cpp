@@ -1,5 +1,5 @@
 #include "CStorager.h"
-#include "CSimulatedCounter.h"
+#include "CSimulatedCore.h"
 #include "../../database/CDBEngine.h"
 #include <mysql.h>
 #include <cstdlib>
@@ -105,7 +105,7 @@ int main()
 		first.Release();
 		Check(second.Renew().Ok(), "old release cannot release new lease");
 		second.Release();
-		CSimulatedCounter counter(std::make_unique<CStorager>("core"));
+		CSimulatedCore counter(std::make_unique<CStorager>("core"));
 		Check(counter.Start(0).Ok(), "core load");
 		Check(counter.AddAccount(2, 500000).Ok(), "create account");
 		CRule rule;
@@ -149,7 +149,7 @@ int main()
 		Check(50000 == counter.Snapshot(2, 1100).m_accounts[0].m_nFrozen && Status::PartiallyFilled == counter.Snapshot(2, 1100).m_orders[0].m_status, "failed cancellation rolls back memory");
 		Check(session.Execute("RENAME TABLE hidden_events TO sim_counter_events"), "restore storage");
 		counter.Stop();
-		CSimulatedCounter restored(std::make_unique<CStorager>("recovered"));
+		CSimulatedCore restored(std::make_unique<CStorager>("recovered"));
 		Check(restored.Start(1200).Ok(), "restart");
 		CSnapshot after = restored.Snapshot(2, 1200);
 		Check(after.m_accounts[0].m_nBalance == 450000 && after.m_accounts[0].m_nFrozen == 50000 && after.m_positions[0].m_nToday == 50 && after.m_trades.size() == 1, "fill state restored atomically");

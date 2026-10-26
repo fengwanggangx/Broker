@@ -6,7 +6,7 @@
 
 namespace trade
 {
-	class ITradingGateway;
+	class ITradeCounter;
 }
 
 enum class TradeAccountType
@@ -41,5 +41,5 @@ struct CTradeAccount
 {
 	CTradeAccountInfo m_info;
 	std::string m_strAdapter, m_strBroker, m_strSite, m_strExternalAccount;
-	std::shared_ptr<trade::ITradingGateway> m_service;
+	std::shared_ptr<trade::ITradeCounter> m_service;
 };

@@ -2,7 +2,7 @@
 #include <deque>
 #include <iostream>
 #include <stdexcept>
-class CDeferredBroker final : public trade::ITradingGateway
+class CDeferredBroker final : public trade::ITradeCounter
 {
 	public:
 	trade::CResult Request(trade::CRequest request, ReplyHandler handler) override
@@ -66,7 +66,7 @@ int main()
 	{
 		return 1;
 	}
-	std::shared_ptr<trade::ITradingGateway> gateway = registry.Create({ 7, "fake", "test", "site", "external" });
+	std::shared_ptr<trade::ITradeCounter> gateway = registry.Create({ 7, "fake", "test", "site", "external" });
 	int nEvents = 0;
 	int nReplies = 0;
 	gateway->SetEventHandler([&nEvents](const trade::CEvent& event)

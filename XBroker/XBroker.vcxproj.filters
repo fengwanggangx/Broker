@@ -135,13 +135,13 @@
     <ClInclude Include="request\RequestCenter.h">
       <Filter>request</Filter>
     </ClInclude>
-    <ClInclude Include="counter\CInProcessGateway.h">
+    <ClInclude Include="counter\CSimulatedCounter.h">
       <Filter>counter</Filter>
     </ClInclude>
     <ClInclude Include="counter\CounterSetup.h">
       <Filter>counter</Filter>
     </ClInclude>
-    <ClInclude Include="counter\CSimulatedCounter.h">
+    <ClInclude Include="counter\CSimulatedCore.h">
       <Filter>counter</Filter>
     </ClInclude>
     <ClInclude Include="counter\CStateEdit.h">
@@ -150,7 +150,7 @@
     <ClInclude Include="counter\CStorager.h">
       <Filter>counter</Filter>
     </ClInclude>
-    <ClInclude Include="counter\ITradingGateway.h">
+    <ClInclude Include="counter\ITradeCounter.h">
       <Filter>counter</Filter>
     </ClInclude>
     <ClInclude Include="counter\TradeProtocol.h">
@@ -266,13 +266,13 @@
     <ClCompile Include="request\RequestCenter.cpp">
       <Filter>request</Filter>
     </ClCompile>
-    <ClCompile Include="counter\CInProcessGateway.cpp">
+    <ClCompile Include="counter\CSimulatedCounter.cpp">
       <Filter>counter</Filter>
     </ClCompile>
     <ClCompile Include="counter\CounterSetup.cpp">
       <Filter>counter</Filter>
     </ClCompile>
-    <ClCompile Include="counter\CSimulatedCounter.cpp">
+    <ClCompile Include="counter\CSimulatedCore.cpp">
       <Filter>counter</Filter>
     </ClCompile>
     <ClCompile Include="counter\CStorager.cpp">

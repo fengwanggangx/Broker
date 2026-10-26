@@ -131,7 +131,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	case _TyRequest::TRADE_ACCOUNT_DISCONNECT:
 	case _TyRequest::TRADE_ACCOUNT_INFO_QUERY:
 	case _TyRequest::TRADE_ACCOUNT_LOGS_QUERY:
-		m_trader.HandleAccountRequest(request, request.GetExtraData("actor"));
+		m_trader.HandleAccountRequest(request);
 		break;
 	case _TyRequest::TRADE_ORDER_SUBMIT:
 	case _TyRequest::TRADE_ORDER_CANCEL:
@@ -140,7 +140,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	case _TyRequest::TRADE_TRADE_QUERY:
 	case _TyRequest::TRADE_SYNC_QUERY:
 	case _TyRequest::TRADE_CAPABILITIES_QUERY:
-		m_trader.HandleTradingRequest(request);
+		m_trader.HandleTradeRequest(request);
 		break;
 	default:
 		net::SendError(nConnection, request, static_cast<int>(trade::Error::Unsupported), "Unsupported XBroker request");
