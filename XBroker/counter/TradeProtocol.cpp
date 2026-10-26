@@ -1,4 +1,5 @@
 #include "TradeProtocol.h"
+#include <type_traits>
 namespace trade::protocol
 {
 	void WriteOrder(const trade::COrder& row, request::TradeOrderRecord& wire)
@@ -57,6 +58,81 @@ namespace trade::protocol
 		wire.set_frozen(row.m_nFrozen);
 		wire.set_available(row.m_nBalance - row.m_nFrozen);
 		wire.set_available_snapshot(bReady && row.m_bConnected);
+		wire.set_connected(row.m_bConnected);
+	}
+
+	void WriteReply(const CCounterReply& reply, ::CRequest& response)
+	{
+		request::TradeCounterReply wire;
+		wire.set_request_id(reply.m_requestId);
+		wire.set_account_id(reply.m_accountId);
+		wire.set_operation(static_cast<int>(reply.m_operation));
+		wire.set_error_code(static_cast<int>(reply.m_result.m_error));
+		wire.set_error_message(reply.m_result.m_strMessage);
+		wire.set_watermark(reply.m_version);
+		wire.set_server_time_ms(reply.m_nTime);
+		response.SetErrorInfo(static_cast<int>(reply.m_result.m_error), reply.m_result.m_strMessage);
+		if (reply.m_result.Ok())
+		{
+			std::visit([&wire](const auto& value)
+			{
+				using T = std::decay_t<decltype(value)>;
+				if constexpr (std::is_same_v<T, COperationReceipt>)
+				{
+					wire.mutable_receipt()->set_order_id(value.m_orderId);
+				}
+				else if constexpr (std::is_same_v<T, CAccount>)
+				{
+					WriteFunds(value, true, *wire.mutable_funds());
+					wire.mutable_funds()->set_server_time_ms(wire.server_time_ms());
+				}
+				else if constexpr (std::is_same_v<T, std::vector<CPosition>>)
+				{
+					request::TradePositionList* rows = wire.mutable_positions();
+					for (const auto& row : value)
+					{
+						WritePosition(row, *rows->add_positions());
+					}
+				}
+				else if constexpr (std::is_same_v<T, std::vector<COrder>>)
+				{
+					request::TradeOrderList* rows = wire.mutable_orders();
+					for (const auto& row : value)
+					{
+						WriteOrder(row, *rows->add_orders());
+					}
+				}
+				else if constexpr (std::is_same_v<T, std::vector<CTrade>>)
+				{
+					request::TradeList* rows = wire.mutable_trades();
+					for (const auto& row : value)
+					{
+						WriteTrade(row, *rows->add_trades());
+					}
+				}
+				else if constexpr (std::is_same_v<T, CAccountData>)
+				{
+					request::TradeAccountData* data = wire.mutable_account_data();
+					WriteFunds(value.m_account, value.m_bReady, *data->mutable_account());
+					data->set_watermark(value.m_version);
+					data->set_server_time_ms(value.m_nTime);
+					data->set_ready(value.m_bReady);
+					for (const auto& row : value.m_positions)
+					{
+						WritePosition(row, *data->add_positions());
+					}
+					for (const auto& row : value.m_orders)
+					{
+						WriteOrder(row, *data->add_orders());
+					}
+					for (const auto& row : value.m_trades)
+					{
+						WriteTrade(row, *data->add_trades());
+					}
+				}
+			}, reply.m_data);
+		}
+		response.SetData(wire);
 	}
 	void WriteEvent(const CEvent& event, request::TradeEventRecord& wire)
 	{
@@ -142,8 +218,8 @@ namespace trade::protocol
 		case trade::EventKind::Funds:
 		{
 			push.SetType(_TyRequest::TRADE_ACCOUNT_INFO_PUSH);
-			request::TradeAccountInfoList rows;
-			WriteFunds(event.m_account, true, *rows.add_accounts());
+			request::TradeAccountInfo rows;
+			WriteFunds(event.m_account, true, rows);
 			push.SetData(rows);
 		}
 		break;

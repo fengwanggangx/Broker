@@ -702,10 +702,20 @@ namespace trade
 		}
 		return bChanged ? Commit(edit) : CResult{};
 	}
-	CReply CSimulatedCore::Execute(const CRequest& request, std::int64_t nNow)
+	CCounterReply CSimulatedCore::Execute(const CRequest& request, std::int64_t nNow)
 	{
-		CReply reply;
+		CCounterReply reply;
 		reply.m_requestId = request.m_requestId;
+		reply.m_accountId = request.m_accountId;
+		reply.m_operation = request.m_operation;
+		reply.m_nTime = nNow;
+		reply.m_version = m_state.m_sequence;
+		Id nOrderId = 0;
+		if (0 == request.m_accountId)
+		{
+			reply.m_result = { Error::NotFound, "account_id must be positive" };
+			return reply;
+		}
 		if ((Operation::Login > request.m_operation) || (Operation::Synchronize < request.m_operation))
 		{
 			reply.m_result = { Error::Unsupported, "operation not supported" };
@@ -716,7 +726,7 @@ namespace trade
 		{
 			return reply;
 		}
-		if (((0 != request.m_accountId) || ((Operation::Funds != request.m_operation) && (Operation::Positions != request.m_operation) && (Operation::Orders != request.m_operation) && (Operation::Trades != request.m_operation) && (Operation::Synchronize != request.m_operation))) && !m_state.m_accounts.contains(request.m_accountId))
+		if (!m_state.m_accounts.contains(request.m_accountId))
 		{
 			reply.m_result = { Error::NotFound, "account not found" };
 			return reply;
@@ -749,7 +759,7 @@ namespace trade
 			COrder order = request.m_order;
 			order.m_accountId = request.m_accountId;
 			order.m_requestId = request.m_requestId;
-			result = Submit(edit, order, nNow, reply.m_orderId);
+			result = Submit(edit, order, nNow, nOrderId);
 			if (result.Ok())
 			{
 				auto depth = m_depths.find(order.m_strSecurity);
@@ -775,7 +785,7 @@ namespace trade
 						edit.Rollback();
 					}
 					reply.m_result = result;
-					reply.m_snapshot = Snapshot(request.m_accountId, nNow, request.m_operation, reply.m_orderId);
+					CompleteReply(reply, nOrderId, request.m_strSecurity);
 					return reply;
 				}
 			}
@@ -790,28 +800,13 @@ namespace trade
 			else
 			{
 				Cancel(edit, order->second, Status::Cancelled, request.m_requestId);
-				reply.m_orderId = request.m_orderId;
+				nOrderId = request.m_orderId;
 			}
 		}
 		else
 		{
-			reply.m_snapshot = Snapshot(request.m_accountId, nNow, request.m_operation, reply.m_orderId);
-			if (request.m_afterSequence > m_state.m_sequence)
-			{
-				reply.m_result = { Error::Conflict, "event cursor ahead of watermark; request a fresh snapshot" };
-				return reply;
-			}
-			if (Operation::Synchronize == request.m_operation)
-			{
-				reply.m_events = EventsAfter(request.m_afterSequence);
-				if (0 != request.m_accountId)
-				{
-					std::erase_if(reply.m_events, [&request](const CEvent& event)
-					{
-						return request.m_accountId != event.m_accountId;
-					});
-				}
-			}
+			CompleteReply(reply, nOrderId, request.m_strSecurity);
+
 			return reply;
 		}
 		if (!result.Ok())
@@ -819,7 +814,7 @@ namespace trade
 			edit.Rollback();
 		}
 		reply.m_result = result.Ok() ? Commit(edit) : result;
-		reply.m_snapshot = Snapshot(request.m_accountId, nNow, request.m_operation, reply.m_orderId);
+		CompleteReply(reply, nOrderId, request.m_strSecurity);
 		return reply;
 	}
 	CResult CSimulatedCore::OnDepth(CDepth depth, std::int64_t nNow)
@@ -901,50 +896,101 @@ namespace trade
 			m_depths.clear();
 		}
 	}
-	CSnapshot CSimulatedCore::Snapshot(Id nAccountId, std::int64_t nNow, Operation operation, Id nOrderId) const
+	CAccountData CSimulatedCore::Snapshot(Id nAccountId, std::int64_t nNow) const
 	{
-		CSnapshot snapshot;
-		snapshot.m_bReady = m_bReady;
-		snapshot.m_version = m_state.m_sequence;
-		snapshot.m_nTime = nNow;
-		for (const auto& item : m_state.m_accounts)
+		CAccountData data;
+		data.m_account.m_accountId = nAccountId;
+		data.m_version = m_state.m_sequence;
+		data.m_nTime = nNow;
+		auto iter = m_state.m_accounts.find(nAccountId);
+		if (0 == nAccountId || m_state.m_accounts.end() == iter)
 		{
-			if ((0 == nAccountId) || (nAccountId == item.first))
+			return data;
+		}
+		data.m_account = iter->second;
+		data.m_bReady = m_bReady;
+		for (const auto& item : m_state.m_positions)
+		{
+			if (nAccountId == item.second.m_accountId)
 			{
-				snapshot.m_accounts.emplace_back(item.second);
+				data.m_positions.emplace_back(item.second);
 			}
 		}
-		if (Operation::Synchronize == operation || Operation::Positions == operation)
+		for (const auto& item : m_state.m_orders)
 		{
+			if (nAccountId == item.second.m_accountId)
+			{
+				data.m_orders.emplace_back(item.second);
+			}
+		}
+		for (const auto& item : m_state.m_trades)
+		{
+			if (nAccountId == item.second.m_accountId)
+			{
+				data.m_trades.emplace_back(item.second);
+			}
+		}
+		return data;
+	}
+	void CSimulatedCore::CompleteReply(CCounterReply& reply, Id nOrderId, const std::string& strSecurity) const
+	{
+		reply.m_version = m_state.m_sequence;
+		if (!reply.m_result.Ok())
+		{
+			reply.m_data = std::monostate{};
+			return;
+		}
+		switch (reply.m_operation)
+		{
+		case Operation::Funds:
+			reply.m_data = m_state.m_accounts.at(reply.m_accountId);
+			break;
+		case Operation::Positions:
+		{
+			std::vector<CPosition> rows;
 			for (const auto& item : m_state.m_positions)
 			{
-				if ((0 == nAccountId) || (nAccountId == item.second.m_accountId))
+				if (reply.m_accountId == item.second.m_accountId && (strSecurity.empty() || strSecurity == item.second.m_strSecurity))
 				{
-					snapshot.m_positions.emplace_back(item.second);
+					rows.emplace_back(item.second);
 				}
 			}
+			reply.m_data = std::move(rows);
+			break;
 		}
-		if (Operation::Synchronize == operation || Operation::Orders == operation || Operation::Submit == operation || Operation::Cancel == operation)
+		case Operation::Orders:
 		{
+			std::vector<COrder> rows;
 			for (const auto& item : m_state.m_orders)
 			{
-				if (((0 == nAccountId) || (nAccountId == item.second.m_accountId)) && (0 == nOrderId || nOrderId == item.first))
+				if (reply.m_accountId == item.second.m_accountId && (strSecurity.empty() || strSecurity == item.second.m_strSecurity))
 				{
-					snapshot.m_orders.emplace_back(item.second);
+					rows.emplace_back(item.second);
 				}
 			}
+			reply.m_data = std::move(rows);
+			break;
 		}
-		if (Operation::Synchronize == operation || Operation::Trades == operation)
+		case Operation::Trades:
 		{
+			std::vector<CTrade> rows;
 			for (const auto& item : m_state.m_trades)
 			{
-				if ((0 == nAccountId) || (nAccountId == item.second.m_accountId))
+				if (reply.m_accountId == item.second.m_accountId && (strSecurity.empty() || strSecurity == item.second.m_strSecurity))
 				{
-					snapshot.m_trades.emplace_back(item.second);
+					rows.emplace_back(item.second);
 				}
 			}
+			reply.m_data = std::move(rows);
+			break;
 		}
-		return snapshot;
+		case Operation::Synchronize:
+			reply.m_data = Snapshot(reply.m_accountId, reply.m_nTime);
+			break;
+		default:
+			reply.m_data = COperationReceipt{ nOrderId };
+			break;
+		}
 	}
 	std::vector<CEvent> CSimulatedCore::EventsAfter(Id nSequence) const
 	{

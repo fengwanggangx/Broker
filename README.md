@@ -73,3 +73,11 @@ XBroker 从 XEngine 复制所需数据库、网络、配置、线程与工具实
 `request/request.proto`、`request/v1/market.proto`、配套生成文件、请求封装，以及 `counter/TradeTypes.*` 与 XEngine 对应副本保持同步。协议改动时先修改源文件，使用与现有 29.3 运行库匹配的 protoc 在两端分别执行 `protoc -I request --cpp_out=request request/request.proto request/v1/market.proto`，然后执行契约一致性检查和两端测试。不要只修改生成文件。
 
 项目原名 Broker；改名后继续使用 `[Broker]` 配置节、`broker` 数据库名及既有账户来源和适配器标识，现有部署配置无需改名。构建配置使用 `XBROKER_BUILD_SERVICE`、`XBROKER_DEPS`、`XBROKER_MODE`。
+
+### 单账户柜台数据协议
+
+柜台请求必须指定非零账户编号。`CAccountData` 是单账户完整数据；`CCounterReply` 按操作返回回执、资金、持仓、委托、成交或完整账户数据。普通查询不覆盖完整缓存。
+
+连接及重连通过完整账户数据恢复状态，再应用水位之后的实时事件，不支持 `after_sequence` 历史补取。资金查询使用单个 `account_id`，不再接受 `account_ids`。账户目录查询仍返回基础信息列表。凭据登录由服务端解析到唯一账户后提交柜台。
+
+本次协议使用 `counter_reply` 的 `oneof` 数据字段，旧 `account_info_list`、`trade_sync` 字段已保留编号并废弃。XBroker、XEngine、XTrader 必须配套升级；HQMarket 同步协议定义。

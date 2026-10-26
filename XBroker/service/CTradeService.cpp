@@ -82,97 +82,6 @@ namespace
 		response.SetErrorInfo(0, "");
 		return response;
 	}
-	void WriteSyncResponse(const trade::CReply& reply, CRequest& response)
-	{
-		request::TradeSyncResult sync;
-		sync.set_watermark(reply.m_snapshot.m_version);
-		sync.set_ready(reply.m_snapshot.m_bReady);
-		sync.set_server_time_ms(reply.m_snapshot.m_nTime);
-		for (const auto& account : reply.m_snapshot.m_accounts)
-		{
-			trade::protocol::WriteFunds(account, reply.m_snapshot.m_bReady, *sync.add_accounts());
-		}
-		for (const auto& row : reply.m_snapshot.m_orders)
-		{
-			WriteOrder(row, *sync.add_orders());
-		}
-		for (const auto& row : reply.m_snapshot.m_trades)
-		{
-			WriteTrade(row, *sync.add_trades());
-		}
-		for (const auto& row : reply.m_snapshot.m_positions)
-		{
-			WritePosition(row, *sync.add_positions());
-		}
-		for (const auto& event : reply.m_events)
-		{
-			trade::protocol::WriteEvent(event, *sync.add_events());
-		}
-		response.SetData(sync);
-	}
-	void WriteOrderResponse(const trade::CReply& reply, CRequest& response, _TyRequest type, const std::string& strSecurity)
-	{
-		request::TradeOrderList rows;
-		for (const auto& row : reply.m_snapshot.m_orders)
-		{
-			if ((strSecurity.empty() || strSecurity == row.m_strSecurity) && ((_TyRequest::TRADE_ORDER_QUERY == type) || reply.m_orderId == row.m_orderId))
-			{
-				WriteOrder(row, *rows.add_orders());
-			}
-		}
-		response.SetData(rows);
-	}
-	void WriteTradeResponse(const trade::CReply& reply, CRequest& response, const std::string& strSecurity)
-	{
-		request::TradeList rows;
-		for (const auto& row : reply.m_snapshot.m_trades)
-		{
-			if (strSecurity.empty() || strSecurity == row.m_strSecurity)
-			{
-				WriteTrade(row, *rows.add_trades());
-			}
-		}
-		response.SetData(rows);
-	}
-	void WritePositionResponse(const trade::CReply& reply, CRequest& response, const std::string& strSecurity)
-	{
-		request::TradePositionList rows;
-		for (const auto& row : reply.m_snapshot.m_positions)
-		{
-			if (strSecurity.empty() || strSecurity == row.m_strSecurity)
-			{
-				WritePosition(row, *rows.add_positions());
-			}
-		}
-		response.SetData(rows);
-	}
-
-	void WriteTradingResponse(const trade::CReply& reply, CRequest& response, const std::string& strSecurity)
-	{
-		if (!reply.m_result.Ok())
-		{
-			return;
-		}
-		switch (response.GetType())
-		{
-		case _TyRequest::TRADE_SYNC_QUERY:
-			WriteSyncResponse(reply, response);
-			break;
-		case _TyRequest::TRADE_ORDER_SUBMIT:
-		case _TyRequest::TRADE_ORDER_CANCEL:
-		case _TyRequest::TRADE_ORDER_QUERY:
-			WriteOrderResponse(reply, response, response.GetType(), strSecurity);
-			break;
-		case _TyRequest::TRADE_TRADE_QUERY:
-			WriteTradeResponse(reply, response, strSecurity);
-			break;
-		case _TyRequest::TRADE_POSITION_QUERY:
-			WritePositionResponse(reply, response, strSecurity);
-			break;
-		default:
-			break;
-		}
-	}
 } // namespace
 
 CTradeService::CTradeService()
@@ -288,11 +197,14 @@ bool CTradeService::Initialize(CSession& session)
 		}
 	}
 	std::lock_guard<std::mutex> initializeLock(m_mtx_accounts);
-	for (const auto& order : m_counter->Snapshot().m_orders)
+	for (const auto& item : m_accounts)
 	{
-		if (trade::IsActive(order.m_status))
+		for (const auto& order : m_counter->Snapshot(item.first).m_orders)
 		{
-			m_orderAccounts[order.m_orderId] = order.m_accountId;
+			if (trade::IsActive(order.m_status))
+			{
+				m_orderAccounts[order.m_orderId] = order.m_accountId;
+			}
 		}
 	}
 	return true;
@@ -342,116 +254,14 @@ bool CTradeService::DispatchRequest(const CRequest& req, const std::string& acto
 }
 bool CTradeService::HandleAccountInfo(const CRequest& req, const std::string&)
 {
-	std::vector<std::uint64_t> ids;
-	if (!req.GetExtraData("account_ids", ids))
+	if (req.GetExtraData().contains("account_ids"))
 	{
-		net::SendError(req.GetConnectionId(), req, 1202, "account_ids must be a JSON array of positive IDs");
+		net::SendError(req.GetConnectionId(), req, 1202, "use one account_id");
 		return false;
 	}
-	struct CBatch
-	{
-		std::mutex m_mtx_reply;
-		request::TradeAccountInfoList m_rows;
-		std::size_t m_nRemaining{ 0 };
-	};
-	std::shared_ptr<CBatch> batch = std::make_shared<CBatch>();
-	std::map<std::shared_ptr<trade::ITradeCounter>, std::vector<std::uint64_t>, std::owner_less<std::shared_ptr<trade::ITradeCounter>>> groups;
-	{
-		std::lock_guard<std::mutex> lock(m_mtx_accounts);
-		if (ids.empty())
-		{
-			for (const auto& item : m_accounts)
-			{
-				ids.emplace_back(item.first);
-			}
-		}
-		std::sort(ids.begin(), ids.end());
-		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-		for (std::uint64_t id : ids)
-		{
-			const auto mIter = m_accounts.find(id);
-			if (m_accounts.end() != mIter && nullptr != mIter->second.m_service)
-			{
-				groups[mIter->second.m_service].emplace_back(id);
-			}
-			else
-			{
-				request::TradeAccountInfo* row = batch->m_rows.add_accounts();
-				row->set_account_id(id);
-				row->set_error_code(1202);
-				row->set_error_message("account route unavailable");
-			}
-		}
-	}
-	batch->m_nRemaining = groups.size();
-	net::_TyConnectionId connection = req.GetConnectionId();
-	std::uint64_t nRequest = req.GetId();
-	auto send = [batch, connection, nRequest]()
-	{
-		CRequest response;
-		response.SetId(nRequest);
-		response.SetType(_TyRequest::TRADE_ACCOUNT_INFO_QUERY);
-		response.SetData(batch->m_rows);
-		net::SendRequest(connection, response);
-	};
-	if (groups.empty())
-	{
-		send();
-		return true;
-	}
-	for (const auto& group : groups)
-	{
-		std::function<void(const trade::CReply&)> completion = [batch, ids = group.second, send](const trade::CReply& reply)
-		{
-			bool bDone = false;
-			{
-				std::lock_guard<std::mutex> lock(batch->m_mtx_reply);
-				for (std::uint64_t id : ids)
-				{
-					request::TradeAccountInfo* row = batch->m_rows.add_accounts();
-					row->set_account_id(id);
-					row->set_server_time_ms(reply.m_snapshot.m_nTime);
-					const auto vIter = std::find_if(reply.m_snapshot.m_accounts.begin(), reply.m_snapshot.m_accounts.end(), [id](const trade::CAccount& v)
-					{
-						return id == v.m_accountId;
-					});
-					if (!reply.m_result.Ok())
-					{
-						row->set_error_code(static_cast<int>(reply.m_result.m_error));
-						row->set_error_message(reply.m_result.m_strMessage);
-					}
-					else if (reply.m_snapshot.m_accounts.end() == vIter || !reply.m_snapshot.m_bReady || !vIter->m_bConnected)
-					{
-						row->set_error_code(1203);
-						row->set_error_message("account not synchronized");
-					}
-					else
-					{
-						row->set_available_snapshot(true);
-						row->set_balance(vIter->m_nBalance);
-						row->set_frozen(vIter->m_nFrozen);
-						row->set_available(vIter->m_nBalance - vIter->m_nFrozen);
-					}
-				}
-				bDone = 0 == --batch->m_nRemaining;
-			}
-			if (bDone)
-			{
-				send();
-			}
-		};
-		trade::CRequest query;
-		query.m_operation = trade::Operation::Funds;
-		query.m_requestId = SourceId(req);
-		trade::CResult queued = group.first->Request(query, completion);
-		if (!queued.Ok())
-		{
-			trade::CReply reply;
-			reply.m_result = queued;
-			completion(reply);
-		}
-	}
-	return true;
+	trade::CRequest operation;
+	operation.m_operation = trade::Operation::Funds;
+	return ExecuteTrading(req, std::move(operation));
 }
 bool CTradeService::HandleAccountLogin(const CRequest& req, const std::string&)
 {
@@ -489,7 +299,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req, const std::string&)
 	login.m_strPassword = req.GetExtraData("password");
 	net::_TyConnectionId connection = req.GetConnectionId();
 	std::uint64_t nRequestId = req.GetId();
-	trade::CResult queued = service->Request(std::move(login), [this, connection, nRequestId, accountId](const trade::CReply& reply)
+	trade::CResult queued = service->Request(std::move(login), [this, connection, nRequestId, accountId](const trade::CCounterReply& reply)
 	{
 		CRequest response;
 		response.SetType(_TyRequest::TRADE_ACCOUNT_LOGIN);
@@ -498,7 +308,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req, const std::string&)
 		if (reply.m_result.Ok())
 		{
 			std::lock_guard<std::mutex> lock(m_mtx_accounts);
-			response.SetData(trade::protocol::AccountPayload(m_accounts.at(accountId).m_info));
+			trade::protocol::WriteReply(reply, response);
 		}
 		net::SendRequest(connection, response);
 	});
@@ -665,7 +475,7 @@ bool CTradeService::HandleAccountConnection(const CRequest& req, const std::stri
 	operation.m_accountId = accountId;
 	pDB.reset();
 	CRequest original = req;
-	trade::CResult queued = service->Request(operation, [this, original, accountId](const trade::CReply& reply)
+	trade::CResult queued = service->Request(operation, [this, original, accountId](const trade::CCounterReply& reply)
 	{
 		if (!reply.m_result.Ok())
 		{
@@ -677,7 +487,7 @@ bool CTradeService::HandleAccountConnection(const CRequest& req, const std::stri
 		response.SetType(original.GetType());
 		{
 			std::lock_guard<std::mutex> lock(m_mtx_accounts);
-			response.SetData(trade::protocol::AccountPayload(m_accounts.at(accountId).m_info));
+			trade::protocol::WriteReply(reply, response);
 		}
 		net::SendRequest(original.GetConnectionId(), response);
 	});
@@ -785,10 +595,9 @@ bool CTradeService::HandleSynchronize(const CRequest& req, const std::string&)
 {
 	trade::CRequest operation;
 	operation.m_operation = trade::Operation::Synchronize;
-	std::string strAfter = req.GetExtraData("after_sequence");
-	if (!strAfter.empty() && !utility::to_number(strAfter, operation.m_afterSequence))
+	if (req.GetExtraData().contains("after_sequence"))
 	{
-		net::SendError(req.GetConnectionId(), req, 1202, "invalid after_sequence");
+		net::SendError(req.GetConnectionId(), req, 1202, "incremental synchronization is unsupported");
 		return false;
 	}
 	return ExecuteTrading(req, std::move(operation));
@@ -894,19 +703,18 @@ bool CTradeService::ExecuteTrading(const CRequest& req, trade::CRequest&& operat
 		return false;
 	}
 	operation.m_order.m_accountId = operation.m_accountId;
+	operation.m_strSecurity = req.GetExtraData("security");
 	_TyRequest type = req.GetType();
 	std::string strSecurity = req.GetExtraData("security");
 	net::_TyConnectionId connection = req.GetConnectionId();
 	std::uint64_t nRequestId = req.GetId();
-	trade::CResult queued = service->Request(std::move(operation), [type, connection, nRequestId, strSecurity](const trade::CReply& reply)
+	trade::CResult queued = service->Request(std::move(operation), [type, connection, nRequestId, strSecurity](const trade::CCounterReply& reply)
 	{
 		CRequest response;
 		response.SetId(nRequestId);
 		response.SetType(type);
 		response.SetErrorInfo(static_cast<int>(reply.m_result.m_error), reply.m_result.m_strMessage);
-		response.SetExtraData("version", std::to_string(reply.m_snapshot.m_version));
-		response.SetExtraData("server_time_ms", std::to_string(reply.m_snapshot.m_nTime));
-		WriteTradingResponse(reply, response, strSecurity);
+		trade::protocol::WriteReply(reply, response);
 		net::SendRequest(connection, response);
 	});
 	if (!queued.Ok())

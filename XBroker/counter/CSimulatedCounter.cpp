@@ -31,8 +31,13 @@ namespace trade
 			m_counter->Stop();
 			return result;
 		}
-		m_snapshot = m_counter->Snapshot(0, m_clock());
-		m_delivered = m_snapshot.m_version;
+		for (const auto& account : accounts)
+		{
+			m_snapshots.emplace(account.m_accountId, m_counter->Snapshot(account.m_accountId, m_clock()));
+		}
+		m_delivered = m_counter->Version();
+		m_version = m_delivered;
+		m_bReady = m_counter->Ready();
 		m_bStopping = false;
 		m_worker = std::thread([this]()
 		{
@@ -43,7 +48,11 @@ namespace trade
 	CResult CSimulatedCounter::Request(CRequest request, ReplyHandler handler)
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
-		if (m_bStopping || !m_snapshot.m_bReady)
+		if (0 == request.m_accountId || !m_snapshots.contains(request.m_accountId))
+		{
+			return { Error::NotFound, "account not found" };
+		}
+		if (m_bStopping || !m_bReady)
 		{
 			return { Error::Unavailable, "gateway not ready" };
 		}
@@ -53,7 +62,7 @@ namespace trade
 		}
 		m_work.emplace_back([this, request = std::move(request), handler = std::move(handler)]()
 		{
-			CReply reply = m_counter->Execute(request, m_clock());
+			CCounterReply reply = m_counter->Execute(request, m_clock());
 			Refresh();
 			// Consumers must allow events before the reply, as a broker adapter may do the same.
 			if (nullptr != handler)
@@ -74,9 +83,12 @@ namespace trade
 	{
 		{
 			std::lock_guard<std::mutex> lock(m_mtx_state);
-			if (m_snapshot.m_version == m_counter->Version() && m_snapshot.m_bReady == m_counter->Ready())
+			if (m_version == m_counter->Version() && m_bReady == m_counter->Ready())
 			{
-				m_snapshot.m_nTime = m_clock();
+				for (auto& item : m_snapshots)
+				{
+					item.second.m_nTime = m_clock();
+				}
 				return;
 			}
 		}
@@ -84,12 +96,24 @@ namespace trade
 		EventHandler handler;
 		{
 			std::lock_guard<std::mutex> lock(m_mtx_state);
-			m_snapshot.m_bReady = m_counter->Ready();
-			m_snapshot.m_version = m_counter->Version();
-			m_snapshot.m_nTime = m_clock();
+			m_bReady = m_counter->Ready();
+			m_version = m_counter->Version();
+			for (auto& item : m_snapshots)
+			{
+				item.second.m_nTime = m_clock();
+			}
 			for (const auto& event : events)
 			{
-				UpdateSnapshot(m_snapshot, event);
+				auto iter = m_snapshots.find(event.m_accountId);
+				if (m_snapshots.end() != iter)
+				{
+					UpdateAccountData(iter->second, event);
+				}
+			}
+			for (auto& item : m_snapshots)
+			{
+				item.second.m_bReady = m_bReady;
+				item.second.m_version = m_version;
 			}
 			handler = m_handler;
 		}
@@ -169,45 +193,17 @@ namespace trade
 		std::lock_guard<std::mutex> lock(m_mtx_state);
 		m_handler = std::move(handler);
 	}
-	CSnapshot CSimulatedCounter::Snapshot(Id nAccountId, bool bHistory) const
+	CAccountData CSimulatedCounter::Snapshot(Id nAccountId) const
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
-		CSnapshot snapshot;
-		snapshot.m_bReady = m_snapshot.m_bReady;
-		snapshot.m_version = m_snapshot.m_version;
-		snapshot.m_nTime = m_snapshot.m_nTime;
-		for (const auto& row : m_snapshot.m_accounts)
+		auto iter = m_snapshots.find(nAccountId);
+		if (0 == nAccountId || m_snapshots.end() == iter)
 		{
-			if (0 == nAccountId || nAccountId == row.m_accountId)
-			{
-				snapshot.m_accounts.push_back(row);
-			}
+			CAccountData data;
+			data.m_account.m_accountId = nAccountId;
+			return data;
 		}
-		for (const auto& row : m_snapshot.m_positions)
-		{
-			if (0 == nAccountId || nAccountId == row.m_accountId)
-			{
-				snapshot.m_positions.push_back(row);
-			}
-		}
-		if (bHistory)
-		{
-			for (const auto& row : m_snapshot.m_orders)
-			{
-				if (0 == nAccountId || nAccountId == row.m_accountId)
-				{
-					snapshot.m_orders.push_back(row);
-				}
-			}
-			for (const auto& row : m_snapshot.m_trades)
-			{
-				if (0 == nAccountId || nAccountId == row.m_accountId)
-				{
-					snapshot.m_trades.push_back(row);
-				}
-			}
-		}
-		return snapshot;
+		return iter->second;
 	}
 	std::vector<Operation> CSimulatedCounter::Capabilities() const
 	{
@@ -252,7 +248,13 @@ namespace trade
 			}
 			m_work.emplace_back([this, nAccountId, nInitialBalance, promise]()
 			{
-				promise->set_value(m_counter->AddAccount(nAccountId, nInitialBalance));
+				CResult result = m_counter->AddAccount(nAccountId, nInitialBalance);
+				if (result.Ok())
+				{
+					std::lock_guard<std::mutex> lock(m_mtx_state);
+					m_snapshots.insert_or_assign(nAccountId, m_counter->Snapshot(nAccountId, m_clock()));
+				}
+				promise->set_value(result);
 				Refresh();
 			});
 		}

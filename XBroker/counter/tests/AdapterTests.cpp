@@ -17,9 +17,11 @@ class CDeferredBroker final : public trade::ITradeCounter
 			event.m_order.m_orderId = 123;
 			event.m_account = { request.m_accountId, 10000, 0, true, true };
 			m_handler(event);
-			trade::CReply reply;
+			trade::CCounterReply reply;
 			reply.m_requestId = request.m_requestId;
-			reply.m_orderId = event.m_order.m_orderId;
+			reply.m_accountId = request.m_accountId;
+			reply.m_operation = request.m_operation;
+			reply.m_data = trade::COperationReceipt{ event.m_order.m_orderId };
 			handler(reply);
 		});
 		return {};
@@ -37,7 +39,7 @@ class CDeferredBroker final : public trade::ITradeCounter
 	{
 		m_handler = std::move(handler);
 	}
-	trade::CSnapshot Snapshot(trade::Id, bool) const override
+	trade::CAccountData Snapshot(trade::Id) const override
 	{
 		return {};
 	}
@@ -81,7 +83,7 @@ int main()
 		trade::CRequest request;
 		request.m_accountId = 7;
 		request.m_operation = operation;
-		if (!gateway->Request(std::move(request), [&nReplies](const trade::CReply& reply)
+		if (!gateway->Request(std::move(request), [&nReplies](const trade::CCounterReply& reply)
 		{
 			if (reply.m_result.Ok())
 			{

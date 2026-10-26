@@ -73,7 +73,7 @@ int main()
 				Check(_TyRequest::TRADE_POSITION_PUSH == push.GetType() && replay.position().SerializeAsString() == push.GetData().trade_positions().positions(0).SerializeAsString(), "live and replay position match");
 				break;
 			case trade::EventKind::Funds:
-				Check(_TyRequest::TRADE_ACCOUNT_INFO_PUSH == push.GetType() && replay.funds().SerializeAsString() == push.GetData().account_info_list().accounts(0).SerializeAsString() && 90000 == replay.funds().available(), "live and replay funds match");
+				Check(_TyRequest::TRADE_ACCOUNT_INFO_PUSH == push.GetType() && replay.funds().SerializeAsString() == push.GetData().account_info().SerializeAsString() && 90000 == replay.funds().available(), "live and replay funds match");
 				break;
 			case trade::EventKind::Session:
 				Check(_TyRequest::TRADE_ACCOUNT_STATE_PUSH == push.GetType(), "session push type");

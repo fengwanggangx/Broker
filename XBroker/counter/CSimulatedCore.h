@@ -15,16 +15,17 @@ namespace trade
 		CResult Renew();
 		CResult AddAccount(Id nAccountId, std::int64_t nInitialBalance);
 		CResult ImportRules(const std::vector<CRule>& rules, const std::vector<CCalendar>& calendar);
-		CReply Execute(const CRequest& request, std::int64_t nNow);
+		CCounterReply Execute(const CRequest& request, std::int64_t nNow);
 		CResult OnDepth(CDepth depth, std::int64_t nNow);
 		void OnMarketState(bool bAvailable);
 		CResult Advance(std::int64_t nNow);
-		CSnapshot Snapshot(Id nAccountId, std::int64_t nNow, Operation operation = Operation::Synchronize, Id nOrderId = 0) const;
+		CAccountData Snapshot(Id nAccountId, std::int64_t nNow) const;
 		std::vector<CEvent> EventsAfter(Id nSequence) const;
 		bool Ready() const;
 		Id Version() const;
 
 		private:
+		void CompleteReply(CCounterReply& reply, Id nOrderId, const std::string& strSecurity) const;
 		CResult Commit(CStateEdit& edit);
 		CResult Validate(const CState& state) const;
 		CResult Submit(CStateEdit& edit, COrder order, std::int64_t nNow, Id& nOrderId);

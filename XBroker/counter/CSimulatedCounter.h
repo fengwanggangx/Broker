@@ -17,7 +17,7 @@ namespace trade
 		CResult Start(const std::vector<CAccount>& accounts, const std::vector<CRule>& rules, const std::vector<CCalendar>& calendar);
 		CResult Request(CRequest request, ReplyHandler handler) override;
 		void SetEventHandler(EventHandler handler) override;
-		CSnapshot Snapshot(Id nAccountId = 0, bool bHistory = true) const override;
+		CAccountData Snapshot(Id nAccountId) const override;
 		std::vector<Operation> Capabilities() const override;
 		void OnDepth(CDepth depth) override;
 		void OnMarketState(bool bAvailable) override;
@@ -32,7 +32,9 @@ namespace trade
 		mutable std::mutex m_mtx_state;
 		std::condition_variable m_condition;
 		std::deque<std::function<void()>> m_work;
-		CSnapshot m_snapshot;
+		std::map<Id, CAccountData> m_snapshots;
+		Id m_version{ 0 };
+		bool m_bReady{ false };
 		EventHandler m_handler;
 		Id m_delivered{ 0 };
 		std::atomic_bool m_bInputAvailable{ false };
