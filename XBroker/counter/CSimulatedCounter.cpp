@@ -154,7 +154,7 @@ namespace trade
 					break;
 				}
 			}
-			Id nEpoch = m_epoch.load();
+			std::uint64_t nEpoch = m_epoch.load();
 			if (nEpoch != m_appliedEpoch)
 			{
 				m_counter->OnMarketState(false);
@@ -193,7 +193,7 @@ namespace trade
 		std::lock_guard<std::mutex> lock(m_mtx_state);
 		m_handler = std::move(handler);
 	}
-	CAccountData CSimulatedCounter::Snapshot(Id nAccountId) const
+	CAccountData CSimulatedCounter::Snapshot(std::uint64_t nAccountId) const
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
 		auto iter = m_snapshots.find(nAccountId);
@@ -216,7 +216,7 @@ namespace trade
 		{
 			return;
 		}
-		Id nEpoch = m_epoch.load();
+		std::uint64_t nEpoch = m_epoch.load();
 		m_work.emplace_back([this, nEpoch, depth = std::move(depth)]() mutable
 		{
 			if (nEpoch == m_epoch.load() && m_bInputAvailable.load())
@@ -235,7 +235,7 @@ namespace trade
 		}
 		m_condition.notify_one();
 	}
-	CResult CSimulatedCounter::AddAccount(Id nAccountId, std::int64_t nInitialBalance)
+	CResult CSimulatedCounter::AddAccount(std::uint64_t nAccountId, std::int64_t nInitialBalance)
 	{
 		// Administrative provisioning is not a trading request. A future remote host exposes it separately.
 		std::shared_ptr<std::promise<CResult>> promise = std::make_shared<std::promise<CResult>>();

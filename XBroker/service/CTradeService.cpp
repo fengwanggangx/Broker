@@ -191,7 +191,7 @@ bool CTradeService::Initialize(CSession& session)
 		if (item.second.m_info.m_bDefault)
 		{
 			trade::CRequest request;
-			request.m_operation = trade::Operation::Connect;
+			request.m_params = trade::CConnect{};
 			request.m_accountId = item.first;
 			item.second.m_service->SendRequest(request, {});
 		}
@@ -260,7 +260,7 @@ bool CTradeService::HandleAccountInfo(const CRequest& req, const std::string&)
 		return false;
 	}
 	trade::CRequest param;
-	param.m_operation = trade::Operation::Funds;
+	param.m_params = trade::CFundsQuery{};
 	return SendRequest(req, std::move(param));
 }
 bool CTradeService::HandleAccountLogin(const CRequest& req, const std::string&)
@@ -290,13 +290,13 @@ bool CTradeService::HandleAccountLogin(const CRequest& req, const std::string&)
 		return false;
 	}
 	trade::CRequest login;
-	login.m_operation = trade::Operation::Login;
+	trade::CLoginParams& params = login.m_params.emplace<trade::CLoginParams>();
 	login.m_accountId = accountId;
 	login.m_requestId = SourceId(req);
-	login.m_strBroker = req.GetExtraData("broker");
-	login.m_strSite = req.GetExtraData("site");
-	login.m_strUser = req.GetExtraData("account");
-	login.m_strPassword = req.GetExtraData("password");
+	params.m_strBroker = req.GetExtraData("broker");
+	params.m_strSite = req.GetExtraData("site");
+	params.m_strUser = req.GetExtraData("account");
+	params.m_strPassword = req.GetExtraData("password");
 	net::_TyConnectionId id = req.GetConnectionId();
 	std::uint64_t nRequestId = req.GetId();
 	trade::CResult queued = service->SendRequest(std::move(login), [this, id, nRequestId, accountId](const trade::CCounterReply& reply)
@@ -470,7 +470,14 @@ bool CTradeService::HandleAccountConnection(const CRequest& req, const std::stri
 		return AccountError(*pDB, req, actor, accountId, "UNSUPPORTED: trading adapter is not configured");
 	}
 	trade::CRequest param;
-	param.m_operation = _TyRequest::TRADE_ACCOUNT_CONNECT == type ? trade::Operation::Connect : trade::Operation::Disconnect;
+	if (_TyRequest::TRADE_ACCOUNT_CONNECT == type)
+	{
+		param.m_params = trade::CConnect{};
+	}
+	else
+	{
+		param.m_params = trade::CDisconnect{};
+	}
 	param.m_requestId = SourceId(req);
 	param.m_accountId = accountId;
 	pDB.reset();
@@ -594,7 +601,7 @@ bool CTradeService::HandleTradeRequest(const CRequest& req)
 bool CTradeService::HandleSynchronize(const CRequest& req, const std::string&)
 {
 	trade::CRequest param;
-	param.m_operation = trade::Operation::Synchronize;
+	param.m_params = trade::CSynchronize{};
 	if (req.GetExtraData().contains("after_sequence"))
 	{
 		net::SendError(req.GetConnectionId(), req, 1202, "incremental synchronization is unsupported");
@@ -605,27 +612,27 @@ bool CTradeService::HandleSynchronize(const CRequest& req, const std::string&)
 bool CTradeService::HandleOrderSubmit(const CRequest& req, const std::string&)
 {
 	trade::CRequest param;
-	param.m_operation = trade::Operation::Submit;
-	param.m_order.m_requestId = SourceId(req);
+	trade::CSubmitParams& params = param.m_params.emplace<trade::CSubmitParams>();
+	params.m_order.m_requestId = SourceId(req);
 	std::string strSide = req.GetExtraData("side");
 	std::int64_t nScale = 0;
-	if (("buy" != strSide && "sell" != strSide) || "limit" != req.GetExtraData("order_type") || !ReadId(req.GetExtraData("client_order_id"), param.m_order.m_clientId) || !utility::to_number(req.GetExtraData("price"), param.m_order.m_nPrice) || !utility::to_number(req.GetExtraData("quantity"), param.m_order.m_nQuantity) || !utility::to_number(req.GetExtraData("price_scale"), nScale) || (0 > nScale) || (6 < nScale))
+	if (("buy" != strSide && "sell" != strSide) || "limit" != req.GetExtraData("order_type") || !ReadId(req.GetExtraData("client_order_id"), params.m_order.m_clientId) || !utility::to_number(req.GetExtraData("price"), params.m_order.m_nPrice) || !utility::to_number(req.GetExtraData("quantity"), params.m_order.m_nQuantity) || !utility::to_number(req.GetExtraData("price_scale"), nScale) || (0 > nScale) || (6 < nScale))
 	{
 		net::SendError(req.GetConnectionId(), req, 1202, "invalid limit order parameters");
 		return false;
 	}
-	param.m_order.m_side = "buy" == strSide ? trade::Side::Buy : trade::Side::Sell;
-	param.m_order.m_nPriceScale = static_cast<int>(nScale);
-	param.m_order.m_strSecurity = req.GetExtraData("security");
-	utility::to_number(req.GetExtraData("strategy_id"), param.m_order.m_strategyId);
-	utility::to_number(req.GetExtraData("signal_id"), param.m_order.m_signalId);
+	params.m_order.m_side = "buy" == strSide ? trade::Side::Buy : trade::Side::Sell;
+	params.m_order.m_nPriceScale = static_cast<int>(nScale);
+	params.m_order.m_strSecurity = req.GetExtraData("security");
+	utility::to_number(req.GetExtraData("strategy_id"), params.m_order.m_strategyId);
+	utility::to_number(req.GetExtraData("signal_id"), params.m_order.m_signalId);
 	return SendRequest(req, std::move(param));
 }
 bool CTradeService::HandleOrderCancel(const CRequest& req, const std::string&)
 {
 	trade::CRequest param;
-	param.m_operation = trade::Operation::Cancel;
-	if (!ReadId(req.GetExtraData("order_id"), param.m_orderId))
+	trade::CCancelParams& params = param.m_params.emplace<trade::CCancelParams>();
+	if (!ReadId(req.GetExtraData("order_id"), params.m_orderId))
 	{
 		net::SendError(req.GetConnectionId(), req, 1202, "order_id required");
 		return false;
@@ -635,19 +642,19 @@ bool CTradeService::HandleOrderCancel(const CRequest& req, const std::string&)
 bool CTradeService::HandlePositionQuery(const CRequest& req, const std::string&)
 {
 	trade::CRequest param;
-	param.m_operation = trade::Operation::Positions;
+	param.m_params = trade::CPositionsQuery{};
 	return SendRequest(req, std::move(param));
 }
 bool CTradeService::HandleOrderQuery(const CRequest& req, const std::string&)
 {
 	trade::CRequest param;
-	param.m_operation = trade::Operation::Orders;
+	param.m_params = trade::COrdersQuery{};
 	return SendRequest(req, std::move(param));
 }
 bool CTradeService::HandleTradeQuery(const CRequest& req, const std::string&)
 {
 	trade::CRequest param;
-	param.m_operation = trade::Operation::Trades;
+	param.m_params = trade::CTradesQuery{};
 	return SendRequest(req, std::move(param));
 }
 std::shared_ptr<trade::ITradeCounter> CTradeService::FindCounter(const CRequest& req, std::uint64_t& nAccountId) const
@@ -702,7 +709,10 @@ bool CTradeService::SendRequest(const CRequest& req, trade::CRequest&& param)
 	{
 		return false;
 	}
-	param.m_order.m_accountId = param.m_accountId;
+	if (trade::CSubmitParams* params = std::get_if<trade::CSubmitParams>(&param.m_params); nullptr != params)
+	{
+		params->m_order.m_accountId = param.m_accountId;
+	}
 	_TyRequest type = req.GetType();
 	net::_TyConnectionId id = req.GetConnectionId();
 	std::uint64_t nRequestId = req.GetId();

@@ -8,7 +8,7 @@ namespace trade
 {
 	struct CAdapterConfig
 	{
-		Id m_nAccountId{ 0 };
+		std::uint64_t m_nAccountId{ 0 };
 		std::string m_strAdapter;
 		std::string m_strBroker;
 		std::string m_strSite;

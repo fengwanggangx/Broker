@@ -2,25 +2,57 @@
 #include <deque>
 #include <iostream>
 #include <stdexcept>
+
+static trade::_TyRequestParams MakeParams(trade::Operation operation)
+{
+	switch (operation)
+	{
+	case trade::Operation::Login:
+		return trade::CLoginParams{};
+	case trade::Operation::Connect:
+		return trade::CConnect{};
+	case trade::Operation::Disconnect:
+		return trade::CDisconnect{};
+	case trade::Operation::Submit:
+		return trade::CSubmitParams{};
+	case trade::Operation::Cancel:
+		return trade::CCancelParams{};
+	case trade::Operation::Funds:
+		return trade::CFundsQuery{};
+	case trade::Operation::Positions:
+		return trade::CPositionsQuery{};
+	case trade::Operation::Orders:
+		return trade::COrdersQuery{};
+	case trade::Operation::Trades:
+		return trade::CTradesQuery{};
+	case trade::Operation::Synchronize:
+		return trade::CSynchronize{};
+	}
+	throw std::runtime_error("invalid operation");
+}
+
 class CDeferredBroker final : public trade::ITradeCounter
 {
 	public:
-	trade::CResult Request(trade::CRequest request, ReplyHandler handler) override
+	trade::CResult SendRequest(trade::CRequest request, ReplyHandler handler) override
 	{
 		m_work.emplace_back([this, request = std::move(request), handler = std::move(handler)]()
 		{
 			trade::CEvent event;
 			event.m_accountId = request.m_accountId;
 			event.m_requestId = request.m_requestId;
-			event.m_kind = trade::Operation::Submit == request.m_operation ? trade::EventKind::Order : trade::EventKind::Session;
-			event.m_order = request.m_order;
+			event.m_kind = trade::Operation::Submit == request.GetOperation() ? trade::EventKind::Order : trade::EventKind::Session;
+			if (const trade::CSubmitParams* params = std::get_if<trade::CSubmitParams>(&request.m_params); nullptr != params)
+			{
+				event.m_order = params->m_order;
+			}
 			event.m_order.m_orderId = 123;
 			event.m_account = { request.m_accountId, 10000, 0, true, true };
 			m_handler(event);
 			trade::CCounterReply reply;
 			reply.m_requestId = request.m_requestId;
 			reply.m_accountId = request.m_accountId;
-			reply.m_operation = request.m_operation;
+			reply.m_operation = request.GetOperation();
 			reply.m_data = trade::COperationReceipt{ event.m_order.m_orderId };
 			handler(reply);
 		});
@@ -39,7 +71,7 @@ class CDeferredBroker final : public trade::ITradeCounter
 	{
 		m_handler = std::move(handler);
 	}
-	trade::CAccountData Snapshot(trade::Id) const override
+	trade::CAccountData Snapshot(std::uint64_t) const override
 	{
 		return {};
 	}
@@ -82,8 +114,8 @@ int main()
 	{
 		trade::CRequest request;
 		request.m_accountId = 7;
-		request.m_operation = operation;
-		if (!gateway->Request(std::move(request), [&nReplies](const trade::CCounterReply& reply)
+		request.m_params = MakeParams(operation);
+		if (!gateway->SendRequest(std::move(request), [&nReplies](const trade::CCounterReply& reply)
 		{
 			if (reply.m_result.Ok())
 			{

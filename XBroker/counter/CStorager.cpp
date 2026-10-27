@@ -43,7 +43,7 @@ namespace trade
 			}
 			return strHex + "'";
 		}
-		bool Number(const std::string& strText, Id& nValue)
+		bool Number(const std::string& strText, std::uint64_t& nValue)
 		{
 			std::from_chars_result result = std::from_chars(strText.data(), strText.data() + strText.size(), nValue);
 			return (std::errc() == result.ec) && (strText.data() + strText.size() == result.ptr);
@@ -86,7 +86,7 @@ namespace trade
 		{
 			return false;
 		}
-		Id nFence = 0;
+		std::uint64_t nFence = 0;
 		if (!Number(rows.front()[1], nFence))
 		{
 			return false;
@@ -184,7 +184,7 @@ namespace trade
 			{
 				return Failure();
 			}
-			std::map<Id, CEvent> events;
+			std::map<std::uint64_t, CEvent> events;
 			for (const auto& row : rows)
 			{
 				CState record;
@@ -205,7 +205,7 @@ namespace trade
 		state = std::move(restored);
 		return {};
 	}
-	CResult CStorager::Commit(const CState& state, Id nExpectedSequence)
+	CResult CStorager::Commit(const CState& state, std::uint64_t nExpectedSequence)
 	{
 		db::_TyDBPtr session = CDBEngine::InstanceRef().GetDBPtr(db::em_database::mysql);
 		if ((nullptr == session) || !session->BeginTransaction())
@@ -222,7 +222,7 @@ namespace trade
 		{
 			return Failure();
 		}
-		Id nSequence = 0;
+		std::uint64_t nSequence = 0;
 		if (!rows.empty() && ((1 != rows.front().size()) || !Number(rows.front()[0], nSequence)))
 		{
 			return Failure();

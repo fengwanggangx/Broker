@@ -26,7 +26,7 @@ namespace trade
 		{
 			return m_state;
 		}
-		Id Sequence() const
+		std::uint64_t Sequence() const
 		{
 			return m_original.m_sequence;
 		}
