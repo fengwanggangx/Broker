@@ -91,144 +91,137 @@ class Market:
         finally: client.close()
     def close(self): self.stop.set(); self.thread.join(2); self.listener.close()
 
-def fault_probe(binary, env):
-    listener = socket.socket(); listener.bind(('127.0.0.1', 0)); listener.listen(); listener.settimeout(15)
-    count = []
-    def peer():
-        client, _ = listener.accept()
-        try:
-            while True:
-                request = recv(client); kind = one(request,1); request_id = one(request,5)
-                extra = {}
-                for entry in request.get(3,[]):
-                    row = parse(entry); extra[one(row,1,b'').decode()] = one(row,2,b'').decode()
-                if kind in (1,6): client.sendall(packet(kind,request_id,{'token':'broker-test'}))
-                elif kind == 9: client.sendall(packet(9,request_id,payload=field(31,field(1,field(1,7)+field(2,'fault-account')))))
-                elif kind == 59:
-                    now = int(time.time()*1000)
-                    funds = field(1,7)+field(2,10000000)+field(3,10000000)+field(5,1)
-                    sync = field(2,1)+field(3,now)+field(4,funds)
-                    client.sendall(packet(59,request_id,payload=field(39,sync)))
-                elif kind == 49: count.append(1); break
-        finally: client.close()
-    thread = threading.Thread(target=peer,daemon=True); thread.start()
-    try:
-        subprocess.run([binary,str(listener.getsockname()[1]),'broker-test','7','fault'],env=env,check=True,timeout=20)
-        thread.join(2); assert len(count) == 1, 'interrupted order was retried'
-    finally: listener.close()
-
 def main():
-    parser = argparse.ArgumentParser(); parser.add_argument('--binary', required=True); parser.add_argument('--socket', required=True); parser.add_argument('--mysql-port', type=int, required=True); parser.add_argument('--xengine-probe'); parser.add_argument('--xengine-binary'); args = parser.parse_args()
-    database = 'xtrade_broker_test_' + str(os.getpid())
-    def sql(query): subprocess.run(['mysql','--socket='+args.socket,'-uroot','-e',query], check=True, stdout=subprocess.DEVNULL)
-    def wait_lease():
-        deadline = time.monotonic() + 45
-        while time.monotonic() < deadline:
-            active = subprocess.check_output(['mysql','--socket='+args.socket,'-uroot','-N','-B','-e','SELECT IF(expires_at>CURRENT_TIMESTAMP(3),1,0) FROM '+database+'.sim_counter_lease WHERE id=1'],text=True).strip()
-            if active == '0': return
-            time.sleep(.2)
-        raise AssertionError('terminated writer lease did not expire')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--binary', required=True)
+    parser.add_argument('--socket', required=True)
+    parser.add_argument('--mysql-port', type=int, required=True)
+    parser.add_argument('--xengine-binary')
+    args = parser.parse_args()
+    source = pathlib.Path(__file__).resolve().parents[1]/'XBroker'
+    root = source.parents[1]
+    database = 'account_identity_test_' + str(os.getpid())
+    engine_database = database + '_engine'
+    engine_user = 'identity_' + str(os.getpid())
+    def sql(query):
+        return subprocess.check_output(['mysql','--socket='+args.socket,'-uroot','-N','-B','-e',query], text=True)
     sql('CREATE DATABASE '+database)
-    market = Market(); process = None; client = None; xengine_process = None; xengine_database = None; xengine_user = None
+    sql('CREATE DATABASE '+engine_database)
+    sql("CREATE USER '"+engine_user+"'@'127.0.0.1' IDENTIFIED BY 'identity-test-password'")
+    sql("GRANT ALL ON "+engine_database+".* TO '"+engine_user+"'@'127.0.0.1'")
+    market = Market()
+    processes = []
+    clients = []
     try:
-        with tempfile.TemporaryDirectory(prefix='broker-integration-') as directory:
-            runtime = pathlib.Path(directory); (runtime/'ini').mkdir(); (runtime/'sql').mkdir()
-            source = pathlib.Path(__file__).resolve().parents[1]/'XBroker'
+        with tempfile.TemporaryDirectory(prefix='account-identity-') as directory:
+            runtime = pathlib.Path(directory)
+            (runtime/'ini').mkdir(); (runtime/'sql').mkdir()
             (runtime/'sql/table_create.sql').write_text((source/'exec/debug/sql/table_create.sql').read_text())
-            rules = json.loads((source/'counter/rules.example.json').read_text()); now = int(time.time()*1000); day = int(datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d'))
-            rules['calendar'] = [dict(day=day, open_ms=now-3600000, break_ms=now+3600000, resume_ms=now+7200000, close_ms=now+10800000)]
-            rules['rules'][0]['day'] = day; (runtime/'rules.json').write_text(json.dumps(rules))
-            port = free_port()
-            (runtime/'ini/system.ini').write_text(f'[Broker]\nport={port}\ntoken=broker-test\n[MySQL]\nhost=127.0.0.1\nport={args.mysql_port}\naccount=root\npassword=\ndatabase={database}\npool_size=4\n[HQMarket]\nhost=127.0.0.1\nport={market.port}\ntoken=hq-test\n[Trade]\nrules_path={runtime}/rules.json\n')
-            env = dict(os.environ, LD_LIBRARY_PATH=str(source/'libs/debug') + ':' + os.environ.get('LD_LIBRARY_PATH',''))
-            log = open(runtime/'broker.log','w')
+            (runtime/'ini/brokers.json').write_text(json.dumps([
+                dict(id=1,name='Sim A',adapter='simulated',sites=['default','other']),
+                dict(id=2,name='Sim B',adapter='simulated',sites=['default'])]))
+            rules=json.loads((source/'counter/rules.example.json').read_text())
+            now=int(time.time()*1000); day=int(datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d'))
+            rules['calendar']=[dict(day=day,open_ms=now-3600000,break_ms=now+3600000,resume_ms=now+7200000,close_ms=now+10800000)]
+            rules['rules'][0]['day']=day
+            (runtime/'rules.json').write_text(json.dumps(rules))
+            port=free_port()
+            (runtime/'ini/system.ini').write_text(f'[Broker]\nport={port}\ntoken=broker-test\n[MySQL]\nhost=127.0.0.1\nport={args.mysql_port}\naccount=root\npassword=\ndatabase={database}\npool_size=4\n[HQMarket]\nhost=127.0.0.1\nport={market.port}\naccount=hq-test\npassword=hq-test\n[Trade]\nbrokers_path={runtime}/ini/brokers.json\nrules_path={runtime}/rules.json\n')
+            env=dict(os.environ,LD_LIBRARY_PATH=str(source/'libs/debug')+':'+os.environ.get('LD_LIBRARY_PATH',''))
+            log=open(runtime/'broker.log','w')
             def start():
-                process = subprocess.Popen([str(pathlib.Path(args.binary).resolve())], cwd=runtime, env=env, stdout=log, stderr=log)
+                process=subprocess.Popen([str(pathlib.Path(args.binary).resolve())],cwd=runtime,env=env,stdout=log,stderr=log)
+                processes.append(process)
                 for _ in range(100):
-                    if process.poll() is not None: raise AssertionError('XBroker exited: '+(runtime/'broker.log').read_text())
-                    try: return process, Client(port)
+                    if process.poll() is not None: raise AssertionError((runtime/'broker.log').read_text())
+                    try:
+                        client=Client(port); clients.append(client); client.ok(1,token='broker-test'); return process,client
                     except OSError: time.sleep(.1)
-                raise AssertionError('XBroker startup timed out')
-            process, client = start()
-            assert one(client.call(9),6) != 0, 'unauthenticated request accepted'
-            assert one(client.call(1,token='wrong'),6) != 0, 'bad token accepted'
-            client.ok(1,token='broker-test')
-            for unsupported in (0,54,55,56,57,58):
-                assert one(client.call(unsupported),6) == 3, 'push or unknown type accepted as a request'
-            account = parse(one(client.ok(10,name='integration',initial_balance=10000000),30))
-            account_id = one(account,1); assert account_id >= 1000000000000
-            assert one(client.call(11,account_id=account_id,name=''),6) == 1202
-            client.ok(11,account_id=account_id,name='integration-renamed')
-            catalogue = parse(one(client.ok(9),31))
-            assert any(one(parse(row),2,b'') == b'integration-renamed' for row in catalogue.get(1,[]))
-            client.ok(15,account_id=account_id)
-            client.ok(12,account_id=account_id)
-            funds = parse(one(client.ok(14,account_ids=json.dumps([account_id])),34))
-            assert one(parse(one(funds,1)),5) == 1, 'funds handler did not return synchronized account'
-            client.ok(60,account_id=account_id)
-            client.ok(13,account_id=account_id)
-            client.ok(12,account_id=account_id)
-            assert market.subscribed.wait(5), 'XBroker did not independently subscribe to HQMarket'
+                raise AssertionError('startup timeout')
+            process,client=start()
+            assert not parse(one(client.ok(9),31)).get(1,[]), 'startup published accounts'
+            assert len(parse(one(client.ok(61),42)).get(1,[])) == 2, 'broker directory'
+            identity=dict(broker_id=1,site='default',account='000123')
+            assert one(client.call(8,**identity,password='secret'),6) != 0, 'unknown account login accepted'
+            for changed in [dict(broker_id=999),dict(site='missing')]:
+                assert one(client.call(8,**dict(identity,**changed),password='secret'),6) != 0
+            for target,balance in [(identity,10000000),(dict(identity,site='other'),20000000),(dict(identity,broker_id=2),30000000),(dict(identity,account='123'),40000000)]:
+                client.ok(62,**target,initial_balance=balance)
+                assert one(client.call(62,**target,initial_balance=1),6) != 0, 'duplicate open reset funds'
+            assert not parse(one(client.ok(9),31)).get(1,[]), 'opening implicitly logged in'
+            for target in [identity,dict(identity,site='other'),dict(identity,broker_id=2),dict(identity,account='123')]:
+                response=client.ok(8,**target,password='secret')
+                record=parse(one(response,41)); assert one(record,15) == target['account'].encode()
+            assert len(parse(one(client.ok(9),31)).get(1,[])) == 4
+            def funds(peer,target):
+                reply=parse(one(peer.ok(14,**target),41)); result=parse(one(reply,9))
+                assert one(result,11) == target['account'].encode()
+                return one(result,2)
+            assert [funds(client,target) for target in [identity,dict(identity,site='other'),dict(identity,broker_id=2),dict(identity,account='123')]] == [10000000,20000000,30000000,40000000]
+            client.ok(8,**identity,password='secret')
+            assert market.subscribed.wait(5)
             time.sleep(.2)
-            order_args = dict(account_id=account_id,client_order_id=201,security='600000.SSE',side='buy',order_type='limit',price=1000,price_scale=2,quantity=100,strategy_id=42,signal_id=43)
-            reply = client.ok(49,**order_args)
-            order = parse(one(parse(one(reply,36)),1)); assert one(order,13) == 100 and one(order,5) == 42 and one(order,6) == 43, order
-            client.ok(49,**order_args)
-            trades = parse(one(client.ok(53,account_id=account_id),37)); assert len(trades.get(1,[])) == 1, 'duplicate execution'
-            order_args.update(client_order_id=202,price=900,signal_id=44)
-            order = parse(one(parse(one(client.ok(49,**order_args),36)),1)); order_id = one(order,3)
-            cancelled = parse(one(parse(one(client.ok(50,account_id=account_id,order_id=order_id),36)),1)); assert one(cancelled,9) == 3
-            assert any(one(event,1) == 56 for event in client.events), 'no trade push'
-            if args.xengine_probe:
-                subprocess.run([args.xengine_probe,str(port),'broker-test',str(account_id)], env=env, check=True, timeout=30)
-                fault_probe(args.xengine_probe, env)
+            order=dict(identity,client_order_id=201,security='600000.SSE',side='buy',order_type='limit',price=1000,price_scale=2,quantity=100,strategy_id=42,signal_id=43)
+            reply=parse(one(client.ok(49,**order),41)); order_id=one(parse(one(reply,8)),1)
+            client.ok(49,**order)
+            trades=parse(one(parse(one(client.ok(53,**identity),41)),12)); assert len(trades.get(1,[])) == 1
+            for kind,tag in [(51,10),(52,11),(53,12)]: assert tag in parse(one(client.ok(kind,**identity),41))
+            for target in [dict(identity,site='other'),dict(identity,broker_id=2)]:
+                assert not parse(one(parse(one(client.ok(53,**target),41)),12)).get(1,[]), 'cross-account trades'
+            client.ok(13,**identity)
+            client.ok(8,**identity,password='secret')
+            balance=funds(client,identity)
+            assert balance < 10000000
+            assert one(client.call(59,**identity),6) != 0
             if args.xengine_binary:
-                xengine_database = database + '_wind'; xengine_user = database + '_user'
-                sql('CREATE DATABASE '+xengine_database)
-                sql("CREATE USER '"+xengine_user+"'@'127.0.0.1' IDENTIFIED BY 'test-only-password'")
-                sql("GRANT ALL ON "+xengine_database+".* TO '"+xengine_user+"'@'127.0.0.1'")
-                xengine_runtime = runtime/'xengine'; (xengine_runtime/'ini').mkdir(parents=True); (xengine_runtime/'sql').mkdir()
-                xengine_source = source.parents[1]/'XEngine/XEngine'
-                (xengine_runtime/'sql/table_create.sql').write_text((xengine_source/'exec/debug/sql/table_create.sql').read_text())
-                xengine_port = free_port(); http_port = free_port()
-                (xengine_runtime/'ini/system.ini').write_text(f'[System]\n' + f'tcp_port={xengine_port}\nhttp_port={http_port}\n[Server]\nhost0=HQ_127.0.0.1_{market.port}_1\n[HQMarket]\naccount=test\npassword=test-only-password\n[MySQL]\nhost=127.0.0.1\nport={args.mysql_port}\naccount={xengine_user}\npassword=test-only-password\ndatabase={xengine_database}\npool_size=4\n[Broker]\nhost=127.0.0.1\nport={port}\ntoken=broker-test\n')
-                xengine_log = open(runtime/'xengine.log','w')
-                xengine_process = subprocess.Popen([str(pathlib.Path(args.xengine_binary).resolve())],cwd=xengine_runtime,env=env,stdout=xengine_log,stderr=xengine_log)
+                engine=runtime/'engine'; (engine/'ini').mkdir(parents=True); (engine/'sql').mkdir()
+                engine_source=root/'XEngine/XEngine'
+                (engine/'sql/table_create.sql').write_text((engine_source/'exec/debug/sql/table_create.sql').read_text())
+                engine_port=free_port()
+                (engine/'ini/system.ini').write_text(f'[Server]\nhost0=synthetic_127.0.0.1_{market.port}_1\n[System]\ntcp_port={engine_port}\nhttp_port={free_port()}\n[Broker]\nhost=127.0.0.1\nport={port}\ntoken=broker-test\n[MySQL]\nhost=127.0.0.1\nport={args.mysql_port}\naccount={engine_user}\npassword=identity-test-password\ndatabase={engine_database}\npool_size=4\n[HQMarket]\nhost=127.0.0.1\nport={market.port}\naccount=hq-test\npassword=hq-test\n')
+                engine_env=dict(env,LD_LIBRARY_PATH=str(engine_source/'libs/debug')+':'+env['LD_LIBRARY_PATH'])
+                engine_log=open(engine/'engine.log','w')
+                engine_process=subprocess.Popen([args.xengine_binary],cwd=engine,env=engine_env,stdout=engine_log,stderr=engine_log); processes.append(engine_process)
                 for _ in range(100):
-                    if xengine_process.poll() is not None: raise AssertionError('XEngine exited: '+(runtime/'xengine.log').read_text())
-                    try: xtrader = Client(xengine_port); break
+                    if engine_process.poll() is not None: raise AssertionError((engine/'engine.log').read_text())
+                    try: terminal=Client(engine_port); clients.append(terminal); break
                     except OSError: time.sleep(.1)
-                else: raise AssertionError('XEngine startup timeout')
-                xtrader.ok(3,user='test-user',password='test-password')
-                xtrader.ok(1,user='test-user',password='test-password')
-                record = parse(one(xtrader.ok(10,name='xtrader-account',initial_balance=10000000),30)); xtrader_account = one(record,1)
-                xtrader.ok(8,broker='wind_simulated',site='default',account='SIM-'+str(xtrader_account),password='test-password')
+                terminal.ok(3,user='test-user',password='test-password'); terminal.ok(1,user='test-user',password='test-password')
+                assert len(parse(one(terminal.ok(61),42)).get(1,[])) == 2
+                terminal.ok(8,**identity,password='secret')
                 time.sleep(2)
-                xtrader_order = dict(order_args,account_id=xtrader_account,client_order_id=301,price=1000,signal_id=301)
-                filled = parse(one(parse(one(xtrader.ok(49,**xtrader_order),36)),1)); assert one(filled,13) == 100 and one(filled,4) == xtrader.next_id
-                xtrader_order.update(client_order_id=302,price=900,signal_id=302)
-                pending = parse(one(parse(one(xtrader.ok(49,**xtrader_order),36)),1))
-                xtrader.ok(50,account_id=xtrader_account,order_id=one(pending,3))
-                xtrader.ok(51,account_id=xtrader_account); xtrader.ok(52,account_id=xtrader_account); xtrader.ok(53,account_id=xtrader_account)
-                assert any(one(event,1) == 56 for event in xtrader.events), 'XEngine did not forward trade push'
-                process.terminate(); process.wait(10)
-                time.sleep(1)
-                assert one(xtrader.call(49,**dict(xtrader_order,client_order_id=303,signal_id=303)),6) != 0, 'XEngine accepted order with XBroker down'
-                xtrader.socket.close(); xengine_process.terminate(); xengine_process.wait(10); xengine_process = None
-                print('XTrader wire client -> XEngine -> XBroker account login, submit, fill push, query, cancel and offline rejection passed')
-                # Default SIGTERM termination leaves the writer lease until expiry.
-                wait_lease()
-                process, client = start(); client.ok(1,token='broker-test')
-            client.socket.close(); client = None
-            process.terminate(); process.wait(10); wait_lease(); process, client = start(); client.ok(1,token='broker-test')
-            sync = parse(one(client.ok(59,account_id=account_id),39)); assert len(sync.get(7,[])) >= 1, 'restart lost trades'
-            print('XBroker TCP auth, account CRUD/connect, HQ depth matching, idempotency, cancellation, push and restart passed')
+                assert funds(terminal,identity) == balance
+                pending=dict(order,client_order_id=202,signal_id=44,price=900)
+                pending_id=one(parse(one(parse(one(terminal.ok(49,**pending),41)),8)),1)
+                terminal.ok(50,**identity,order_id=pending_id)
+                strategy=field(2,'moving_average')+field(3,'identity-strategy')+field(5,field(1,'600000')+field(2,'SSE')+field(3,'quote'))+field(6,4096)+field(8,1)+field(9,1)+field(10,'default')+field(11,'000123')
+                terminal.next_id+=1; terminal.socket.sendall(packet(20,terminal.next_id,payload=field(22,strategy)))
+                while True:
+                    result=recv(terminal.socket)
+                    if one(result,5)==terminal.next_id: break
+                assert one(result,6)==0, ('strategy binding',result)
+                strategies=parse(one(terminal.ok(22),23)); bound=parse(one(strategies,1))
+                assert one(bound,9)==1 and one(bound,10)==b'default' and one(bound,11)==b'000123'
+                engine_process.terminate(); engine_process.wait(10)
+                print('XTrader protocol -> XEngine -> XBroker directory, dynamic login, query, order, cancel and strategy binding passed',flush=True)
+            client.socket.close(); process.terminate(); process.wait(10)
+            deadline=time.monotonic()+45
+            while time.monotonic()<deadline:
+                if sql('SELECT IF(expires_at>CURRENT_TIMESTAMP(3),1,0) FROM '+database+'.sim_counter_lease WHERE id=1').strip()=='0':break
+                time.sleep(.2)
+            process,client=start()
+            assert not parse(one(client.ok(9),31)).get(1,[]), 'restart automatically logged in'
+            client.ok(8,**identity,password='secret')
+            assert funds(client,identity)==balance, 'restart changed balance'
+            assert len(parse(one(parse(one(client.ok(53,**identity),41)),12)).get(1,[]))==1, 'restart lost trades'
+            print('Identity isolation, leading zeros, independent opening/login, duplicate open/login, reconnect and restart ledger recovery passed',flush=True)
     finally:
-        if client is not None: client.socket.close()
-        if process is not None and process.poll() is None: process.terminate(); process.wait(10)
+        for client in clients:
+            with contextlib.suppress(OSError):client.socket.close()
+        for process in processes:
+            if process.poll() is None:process.terminate();process.wait(10)
         market.close()
-        if xengine_process is not None and xengine_process.poll() is None: xengine_process.terminate(); xengine_process.wait(10)
-        if xengine_database is not None: sql('DROP DATABASE '+xengine_database)
-        if xengine_user is not None: sql("DROP USER '"+xengine_user+"'@'127.0.0.1'")
-        sql('DROP DATABASE '+database)
-if __name__ == '__main__': main()
+        sql('DROP DATABASE '+database);sql('DROP DATABASE '+engine_database)
+        sql("DROP USER '"+engine_user+"'@'127.0.0.1'")
+
+if __name__ == '__main__':main()

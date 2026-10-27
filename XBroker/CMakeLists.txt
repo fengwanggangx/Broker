@@ -34,3 +34,9 @@ if(XBROKER_BUILD_SERVICE)
 endif()
 
 set(CMAKE_BUILD_RPATH "${depLib}")
+
+if(XBROKER_BUILD_SERVICE)
+ add_executable(login_service_tests counter/tests/LoginServiceTests.cpp service/CTradeService.cpp counter/CounterSetup.cpp counter/CStorager.cpp counter/TradeProtocol.cpp)
+ target_link_libraries(login_service_tests PRIVATE trading_counter xbroker_support)
+ add_test(NAME login_service_tests COMMAND login_service_tests)
+endif()

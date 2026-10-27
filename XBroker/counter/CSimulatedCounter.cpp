@@ -18,7 +18,7 @@ namespace trade
 		}
 		for (const auto& account : accounts)
 		{
-			result = m_counter->AddAccount(account.m_accountId, account.m_nBalance);
+			result = m_counter->AddAccount(account.m_accountIndex, account.m_nBalance);
 			if (!result.Ok())
 			{
 				m_counter->Stop();
@@ -31,9 +31,9 @@ namespace trade
 			m_counter->Stop();
 			return result;
 		}
-		for (const auto& account : accounts)
+		for (const auto& account : m_counter->Accounts())
 		{
-			m_snapshots.emplace(account.m_accountId, m_counter->Snapshot(account.m_accountId, m_clock()));
+			m_snapshots.emplace(account.m_accountIndex, m_counter->Snapshot(account.m_accountIndex, m_clock()));
 		}
 		m_delivered = m_counter->Version();
 		m_version = m_delivered;
@@ -45,10 +45,10 @@ namespace trade
 		});
 		return {};
 	}
-	CResult CSimulatedCounter::SendRequest(CRequest request, ReplyHandler handler)
+	CResult CSimulatedCounter::SendRequest(CReqParam request, ReplyHandler handler)
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
-		if (0 == request.m_accountId || !m_snapshots.contains(request.m_accountId))
+		if (!IsAccountValid(request.m_accountIndex) || !m_snapshots.contains(request.m_accountIndex))
 		{
 			return { Error::NotFound, "account not found" };
 		}
@@ -104,7 +104,7 @@ namespace trade
 			}
 			for (const auto& event : events)
 			{
-				auto iter = m_snapshots.find(event.m_accountId);
+				auto iter = m_snapshots.find(event.m_accountIndex);
 				if (m_snapshots.end() != iter)
 				{
 					UpdateAccountData(iter->second, event);
@@ -193,21 +193,21 @@ namespace trade
 		std::lock_guard<std::mutex> lock(m_mtx_state);
 		m_handler = std::move(handler);
 	}
-	CAccountData CSimulatedCounter::Snapshot(std::uint64_t nAccountId) const
+	CAccountData CSimulatedCounter::Snapshot(const _TyAccountIndex& accountIndex) const
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
-		auto iter = m_snapshots.find(nAccountId);
-		if (0 == nAccountId || m_snapshots.end() == iter)
+		auto iter = m_snapshots.find(accountIndex);
+		if (!IsAccountValid(accountIndex) || m_snapshots.end() == iter)
 		{
 			CAccountData data;
-			data.m_account.m_accountId = nAccountId;
+			data.m_account.m_accountIndex = accountIndex;
 			return data;
 		}
 		return iter->second;
 	}
 	std::vector<Operation> CSimulatedCounter::Capabilities() const
 	{
-		return { Operation::Login, Operation::Connect, Operation::Disconnect, Operation::Submit, Operation::Cancel, Operation::Funds, Operation::Positions, Operation::Orders, Operation::Trades, Operation::Synchronize };
+		return { Operation::Login, Operation::Connect, Operation::Disconnect, Operation::Submit, Operation::Cancel, Operation::Funds, Operation::Positions, Operation::Orders, Operation::Trades };
 	}
 	void CSimulatedCounter::OnDepth(CDepth depth)
 	{
@@ -235,7 +235,7 @@ namespace trade
 		}
 		m_condition.notify_one();
 	}
-	CResult CSimulatedCounter::AddAccount(std::uint64_t nAccountId, std::int64_t nInitialBalance)
+	CResult CSimulatedCounter::AddAccount(const _TyAccountIndex& accountIndex, std::int64_t nInitialBalance)
 	{
 		// Administrative provisioning is not a trading request. A future remote host exposes it separately.
 		std::shared_ptr<std::promise<CResult>> promise = std::make_shared<std::promise<CResult>>();
@@ -246,13 +246,13 @@ namespace trade
 			{
 				return { Error::Unavailable, "gateway stopped" };
 			}
-			m_work.emplace_back([this, nAccountId, nInitialBalance, promise]()
+			m_work.emplace_back([this, accountIndex, nInitialBalance, promise]()
 			{
-				CResult result = m_counter->AddAccount(nAccountId, nInitialBalance);
+				CResult result = m_counter->AddAccount(accountIndex, nInitialBalance);
 				if (result.Ok())
 				{
 					std::lock_guard<std::mutex> lock(m_mtx_state);
-					m_snapshots.insert_or_assign(nAccountId, m_counter->Snapshot(nAccountId, m_clock()));
+					m_snapshots.insert_or_assign(accountIndex, m_counter->Snapshot(accountIndex, m_clock()));
 				}
 				promise->set_value(result);
 				Refresh();

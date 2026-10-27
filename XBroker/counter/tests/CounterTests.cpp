@@ -8,30 +8,33 @@
 #include <limits>
 using namespace trade;
 
-static trade::_TyRequestParams MakeParams(trade::Operation operation)
+static _TyAccountIndex TestAccount(std::uint64_t number)
+{
+	return 0 == number ? _TyAccountIndex{} : _TyAccountIndex{ 1, "default", std::to_string(number) };
+}
+
+static trade::_TyRequestParam MakeParams(trade::Operation operation)
 {
 	switch (operation)
 	{
 	case trade::Operation::Login:
-		return trade::CLoginParams{};
+		return trade::CLoginParam{};
 	case trade::Operation::Connect:
-		return trade::CConnect{};
+		return trade::CConnectParam{};
 	case trade::Operation::Disconnect:
-		return trade::CDisconnect{};
+		return trade::CDisconnectParam{};
 	case trade::Operation::Submit:
-		return trade::CSubmitParams{};
+		return trade::CSubmitParam{};
 	case trade::Operation::Cancel:
-		return trade::CCancelParams{};
+		return trade::CCancelParam{};
 	case trade::Operation::Funds:
-		return trade::CFundsQuery{};
+		return trade::CFundsQueryParam{};
 	case trade::Operation::Positions:
-		return trade::CPositionsQuery{};
+		return trade::CPositionsQueryParam{};
 	case trade::Operation::Orders:
-		return trade::COrdersQuery{};
+		return trade::COrdersQueryParam{};
 	case trade::Operation::Trades:
-		return trade::CTradesQuery{};
-	case trade::Operation::Synchronize:
-		return trade::CSynchronize{};
+		return trade::CDealsQueryParam{};
 	}
 	throw std::runtime_error("invalid operation");
 }
@@ -45,7 +48,7 @@ namespace
 	};
 	class CStore final : public ICounterStore
 	{
-		public:
+	public:
 		explicit CStore(std::shared_ptr<CMemory> memory) : m_memory(std::move(memory))
 		{
 		}
@@ -77,7 +80,7 @@ namespace
 			m_memory->m_bLease = false;
 		}
 
-		private:
+	private:
 		std::shared_ptr<CMemory> m_memory;
 	};
 	void Check(bool bOk, const char* pText)
@@ -100,41 +103,41 @@ namespace
 		rule.m_nMinimumFee = 5;
 		return rule;
 	}
-	CRequest Request(Operation operation, std::uint64_t nAccount = 1, std::uint64_t nClient = 1, std::int64_t nQuantity = 100, std::int64_t nPrice = 1000)
+	CReqParam Request(Operation operation, _TyAccountIndex nAccount = TestAccount(1), std::uint64_t nClient = 1, std::int64_t nQuantity = 100, std::int64_t nPrice = 1000)
 	{
-		CRequest request;
-		request.m_params = MakeParams(operation);
-		request.m_accountId = nAccount;
+		CReqParam request;
+		request.m_param = MakeParams(operation);
+		request.m_accountIndex = nAccount;
 		request.m_requestId = nClient;
 		if (Operation::Submit == operation)
 		{
-			std::get<trade::CSubmitParams>(request.m_params).m_order.m_clientId = nClient;
-			std::get<trade::CSubmitParams>(request.m_params).m_order.m_nPrice = nPrice;
-			std::get<trade::CSubmitParams>(request.m_params).m_order.m_nQuantity = nQuantity;
-			std::get<trade::CSubmitParams>(request.m_params).m_order.m_strSecurity = "600000.SSE";
+			std::get<trade::CSubmitParam>(request.m_param).m_order.m_clientId = nClient;
+			std::get<trade::CSubmitParam>(request.m_param).m_order.m_nPrice = nPrice;
+			std::get<trade::CSubmitParam>(request.m_param).m_order.m_nQuantity = nQuantity;
+			std::get<trade::CSubmitParam>(request.m_param).m_order.m_strSecurity = "600000.SSE";
 		}
 		return request;
 	}
-	void Connect(CSimulatedCore& counter, std::uint64_t nId, std::int64_t nNow)
+	void Connect(CSimulatedCore& counter, const _TyAccountIndex& nId, std::int64_t nNow)
 	{
 		Check(counter.Execute(Request(Operation::Connect, nId), nNow).m_result.Ok(), "connect");
 	}
 
 	class CDeferredBroker final : public ITradeCounter
 	{
-		public:
-		CResult SendRequest(CRequest request, ReplyHandler handler) override
+	public:
+		CResult SendRequest(CReqParam request, ReplyHandler handler) override
 		{
 			m_work.emplace_back([this, request, handler]()
 			{
 				CCounterReply reply;
 				reply.m_requestId = request.m_requestId;
-				reply.m_accountId = request.m_accountId;
+				reply.m_accountIndex = request.m_accountIndex;
 				reply.m_operation = request.GetOperation();
 				switch (request.GetOperation())
 				{
 				case Operation::Funds:
-					reply.m_data = CAccount{ 1, 1000000, 0, true, true };
+					reply.m_data = CAccount{ TestAccount(1), 1000000, 0, true, true };
 					break;
 				case Operation::Positions:
 					reply.m_data = std::vector<CPosition>{};
@@ -145,9 +148,6 @@ namespace
 				case Operation::Trades:
 					reply.m_data = std::vector<CTrade>{};
 					break;
-				case Operation::Synchronize:
-					reply.m_data = Snapshot(request.m_accountId);
-					break;
 				default:
 					reply.m_data = COperationReceipt{};
 					break;
@@ -156,9 +156,9 @@ namespace
 				{
 					CEvent event;
 					event.m_kind = EventKind::Order;
-					event.m_accountId = 1;
-					event.m_order = std::get<trade::CSubmitParams>(request.m_params).m_order;
-					event.m_order.m_accountId = 1;
+					event.m_accountIndex = TestAccount(1);
+					event.m_order = std::get<trade::CSubmitParam>(request.m_param).m_order;
+					event.m_order.m_accountIndex = TestAccount(1);
 					event.m_order.m_orderId = 42;
 					event.m_sequence = 1;
 					if (nullptr != m_handler)
@@ -178,16 +178,16 @@ namespace
 		{
 			m_handler = std::move(handler);
 		}
-		CAccountData Snapshot(std::uint64_t) const override
+		CAccountData Snapshot(const _TyAccountIndex&) const override
 		{
 			CAccountData snapshot;
 			snapshot.m_bReady = true;
-			snapshot.m_account = { 1, 1000000, 0, true, true };
+			snapshot.m_account = { TestAccount(1), 1000000, 0, true, true };
 			return snapshot;
 		}
 		std::vector<Operation> Capabilities() const override
 		{
-			return { Operation::Connect, Operation::Submit, Operation::Funds, Operation::Orders, Operation::Positions, Operation::Trades, Operation::Cancel, Operation::Synchronize };
+			return { Operation::Connect, Operation::Submit, Operation::Funds, Operation::Orders, Operation::Positions, Operation::Trades, Operation::Cancel };
 		}
 		void Stop() override
 		{
@@ -203,7 +203,7 @@ namespace
 			}
 		}
 
-		private:
+	private:
 		EventHandler m_handler;
 		std::deque<std::function<void()>> m_work;
 	};
@@ -217,7 +217,7 @@ namespace
 				++events;
 			}
 		});
-		auto send = [&gateway, &pump](CRequest request)
+		auto send = [&gateway, &pump](CReqParam request)
 		{
 			std::shared_ptr<std::promise<CCounterReply>> promise = std::make_shared<std::promise<CCounterReply>>();
 			std::future<CCounterReply> future = promise->get_future();
@@ -231,12 +231,12 @@ namespace
 			return future.get();
 		};
 		Check(send(Request(Operation::Connect)).m_result.Ok(), "connect contract");
-		for (Operation operation : { Operation::Funds, Operation::Positions, Operation::Orders, Operation::Trades, Operation::Synchronize })
+		for (Operation operation : { Operation::Funds, Operation::Positions, Operation::Orders, Operation::Trades })
 		{
 			CCounterReply reply = send(Request(operation));
-			Check(reply.m_result.Ok() && 1 == reply.m_accountId && operation == reply.m_operation && !std::holds_alternative<std::monostate>(reply.m_data), "query contract");
+			Check(reply.m_result.Ok() && TestAccount(1) == reply.m_accountIndex && operation == reply.m_operation && !std::holds_alternative<std::monostate>(reply.m_data), "query contract");
 		}
-		Check(send(Request(Operation::Submit, 1, 99)).m_result.Ok(), "submit contract");
+		Check(send(Request(Operation::Submit, TestAccount(1), 99)).m_result.Ok(), "submit contract");
 		Check(0 < events.load(), "order event may precede reply");
 		gateway.SetEventHandler({});
 		gateway.Stop();
@@ -246,35 +246,35 @@ namespace
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		CSimulatedCore counter(std::make_unique<CStore>(memory));
 		Check(counter.Start(0).Ok(), "boundary start");
-		Check(counter.AddAccount(1, 1000000).Ok(), "boundary account");
-		CCounterReply invalid = counter.Execute(Request(Operation::Funds, 0), 1100);
+		Check(counter.AddAccount(TestAccount(1), 1000000).Ok(), "boundary account");
+		CCounterReply invalid = counter.Execute(Request(Operation::Funds, TestAccount(0)), 1100);
 		Check(!invalid.m_result.Ok() && std::holds_alternative<std::monostate>(invalid.m_data), "zero account rejected without data");
-		Check(!counter.Execute(Request(Operation::Synchronize, 99), 1100).m_result.Ok(), "unknown account rejected");
-		Check(!counter.Snapshot(0, 1100).m_bReady && counter.Snapshot(0, 1100).m_orders.empty(), "zero snapshot never aggregates");
-		CCounterReply empty = counter.Execute(Request(Operation::Positions, 1), 1100);
+		Check(!counter.Execute(Request(Operation::Funds, TestAccount(99)), 1100).m_result.Ok(), "unknown account rejected");
+		Check(!counter.Snapshot(TestAccount(0), 1100).m_bReady && counter.Snapshot(TestAccount(0), 1100).m_orders.empty(), "zero snapshot never aggregates");
+		CCounterReply empty = counter.Execute(Request(Operation::Positions, TestAccount(1)), 1100);
 		Check(empty.m_result.Ok() && std::holds_alternative<std::vector<CPosition>>(empty.m_data) && std::get<std::vector<CPosition>>(empty.m_data).empty(), "typed empty positions");
-		Connect(counter, 1, 1100);
+		Connect(counter, TestAccount(1), 1100);
 		counter.OnMarketState(true);
 		Check(!counter.Execute(Request(Operation::Submit), 1100).m_result.Ok(), "missing rules");
 		Check(counter.ImportRules({ Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } }).Ok(), "boundary rules");
-		Check(!counter.Execute(Request(Operation::Submit, 1, 1, 101), 1100).m_result.Ok(), "buy lot");
-		Check(!counter.Execute(Request(Operation::Submit, 1, 2, 1000000), 1100).m_result.Ok(), "insufficient cash");
-		Check(!counter.Execute(Request(Operation::Submit, 1, 3, 100, 2001), 1100).m_result.Ok(), "price band");
-		Check(!counter.Execute(Request(Operation::Submit, 1, 4, 100), 2500).m_result.Ok(), "lunch break");
-		Check(!counter.Execute(Request(Operation::Submit, 1, 5, (std::numeric_limits<std::int64_t>::max)()), 1100).m_result.Ok(), "overflow");
-		Check(counter.Execute(Request(Operation::Submit, 1, 6, 200), 1100).m_result.Ok(), "boundary submit");
+		Check(!counter.Execute(Request(Operation::Submit, TestAccount(1), 1, 101), 1100).m_result.Ok(), "buy lot");
+		Check(!counter.Execute(Request(Operation::Submit, TestAccount(1), 2, 1000000), 1100).m_result.Ok(), "insufficient cash");
+		Check(!counter.Execute(Request(Operation::Submit, TestAccount(1), 3, 100, 2001), 1100).m_result.Ok(), "price band");
+		Check(!counter.Execute(Request(Operation::Submit, TestAccount(1), 4, 100), 2500).m_result.Ok(), "lunch break");
+		Check(!counter.Execute(Request(Operation::Submit, TestAccount(1), 5, (std::numeric_limits<std::int64_t>::max)()), 1100).m_result.Ok(), "overflow");
+		Check(counter.Execute(Request(Operation::Submit, TestAccount(1), 6, 200), 1100).m_result.Ok(), "boundary submit");
 		CDepth depth{ "600000.SSE", 1, 1100, 2, { { 990, 500 } }, { { 999, 100 }, { 1000, 100 } } };
 		Check(counter.OnDepth(depth, 1100).Ok(), "multi level");
-		CAccountData snapshot = counter.Snapshot(1, 1100);
+		CAccountData snapshot = counter.Snapshot(TestAccount(1), 1100);
 		Check(2 == snapshot.m_trades.size() && Status::Filled == snapshot.m_orders[0].m_status && 0 == snapshot.m_account.m_nFrozen, "filled multi level");
 		Check(snapshot.m_orders[0].m_nFee == 20 && snapshot.m_account.m_nBalance == 800080, "cumulative fee exact");
 		Check(!counter.OnDepth(CDepth{ "600000.SSE", 2, 1000, 2, {}, { { 1000, 100 } } }, 1100).Ok(), "out of order timestamp");
 		Check(!counter.OnDepth(CDepth{ "600000.SSE", 3, 0, 2, {}, { { 1000, 100 } } }, 7000).Ok(), "stale depth");
 		counter.OnMarketState(false);
-		Check(!counter.Execute(Request(Operation::Submit, 1, 7), 1200).m_result.Ok(), "offline new order");
+		Check(!counter.Execute(Request(Operation::Submit, TestAccount(1), 7), 1200).m_result.Ok(), "offline new order");
 		Check(counter.Execute(Request(Operation::Funds), 1200).m_result.Ok(), "offline query");
-		CRequest cancel = Request(Operation::Cancel);
-		std::get<trade::CCancelParams>(cancel.m_params).m_orderId = snapshot.m_orders[0].m_orderId;
+		CReqParam cancel = Request(Operation::Cancel);
+		std::get<trade::CCancelParam>(cancel.m_param).m_orderId = snapshot.m_orders[0].m_orderId;
 		Check(counter.Execute(cancel, 1200).m_result.Ok(), "terminal cancel idempotent");
 		counter.Stop();
 		std::shared_ptr<CMemory> asyncMemory = std::make_shared<CMemory>();
@@ -282,7 +282,7 @@ namespace
 		{
 			return 1100;
 		});
-		Check(gateway.Start({ { 1, 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } }).Ok(), "gateway start");
+		Check(gateway.Start({ { TestAccount(1), 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } }).Ok(), "gateway start");
 		gateway.OnMarketState(true);
 		Contract(gateway, []()
 		{
@@ -296,15 +296,15 @@ namespace
 	void IncrementalState()
 	{
 		CState state;
-		state.m_accounts.emplace(1, CAccount{ 1, 100000, 0, true, true });
-		state.m_accounts.emplace(2, CAccount{ 2, 200000, 0, true, true });
+		state.m_accounts.emplace(TestAccount(1), CAccount{ TestAccount(1), 100000, 0, true, true });
+		state.m_accounts.emplace(TestAccount(2), CAccount{ TestAccount(2), 200000, 0, true, true });
 		std::string strBefore = EncodeState(state);
 		{
 			CStateEdit edit(state);
-			edit.Save(&CState::m_accounts, std::uint64_t{ 1 });
-			state.m_accounts.at(1).m_nBalance -= 1000;
-			edit.Save(&CState::m_accounts, std::uint64_t{ 1 });
-			state.m_accounts.at(1).m_nBalance -= 1000;
+			edit.Save(&CState::m_accounts, TestAccount(1));
+			state.m_accounts.at(TestAccount(1)).m_nBalance -= 1000;
+			edit.Save(&CState::m_accounts, TestAccount(1));
+			state.m_accounts.at(TestAccount(1)).m_nBalance -= 1000;
 			edit.Save(&CState::m_orders, std::uint64_t{ 1 });
 			state.m_orders.emplace(1, COrder{});
 			state.m_nextOrder++;
@@ -314,80 +314,80 @@ namespace
 		}
 		Check(strBefore == EncodeState(state), "journal restores existing and inserted rows and metadata");
 		CAccountData cache;
-		cache.m_account.m_accountId = 1;
+		cache.m_account.m_accountIndex = TestAccount(1);
 		CEvent event;
-		event.m_accountId = 1;
-		event.m_account = state.m_accounts.at(1);
+		event.m_accountIndex = TestAccount(1);
+		event.m_account = state.m_accounts.at(TestAccount(1));
 		event.m_kind = EventKind::Order;
 		event.m_order.m_orderId = 1;
-		event.m_order.m_accountId = 1;
+		event.m_order.m_accountIndex = TestAccount(1);
 		UpdateAccountData(cache, event);
 		event.m_order.m_status = Status::Cancelled;
 		UpdateAccountData(cache, event);
-		Check(1 == cache.m_orders.size() && Status::Cancelled == cache.m_orders[0].m_status && 1 == cache.m_account.m_accountId, "incremental cache replaces rows without duplicating history");
+		Check(1 == cache.m_orders.size() && Status::Cancelled == cache.m_orders[0].m_status && TestAccount(1) == cache.m_account.m_accountIndex, "incremental cache replaces rows without duplicating history");
 	}
 	void Run()
 	{
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		CSimulatedCore counter(std::make_unique<CStore>(memory));
 		Check(counter.Start(0).Ok(), "start");
-		Check(counter.AddAccount(1, 1000000).Ok() && counter.AddAccount(2, 1000000).Ok(), "migration");
+		Check(counter.AddAccount(TestAccount(1), 1000000).Ok() && counter.AddAccount(TestAccount(2), 1000000).Ok(), "migration");
 		Check(counter.ImportRules({ Rule(1), Rule(2) }, { { 1, 1000, 2000, 3000, 4000 }, { 2, 5000, 6000, 7000, 8000 } }).Ok(), "rules");
-		Connect(counter, 1, 1100);
-		Connect(counter, 2, 1100);
+		Connect(counter, TestAccount(1), 1100);
+		Connect(counter, TestAccount(2), 1100);
 		counter.OnMarketState(true);
-		CCounterReply first = counter.Execute(Request(Operation::Submit, 1, 10, 200), 1100);
+		CCounterReply first = counter.Execute(Request(Operation::Submit, TestAccount(1), 10, 200), 1100);
 		Check(first.m_result.Ok(), "submit");
-		CCounterReply second = counter.Execute(Request(Operation::Submit, 2, 11, 100, 1100), 1100);
+		CCounterReply second = counter.Execute(Request(Operation::Submit, TestAccount(2), 11, 100, 1100), 1100);
 		Check(second.m_result.Ok(), "submit2");
 		CDepth depth{ "600000.SSE", 1, 1100, 2, { { 990, 500 } }, { { 1000, 150 } } };
 		Check(counter.OnDepth(depth, 1100).Ok(), "depth");
-		CAccountData snapshot = counter.Snapshot(1, 1100);
-		CAccountData other = counter.Snapshot(2, 1100);
+		CAccountData snapshot = counter.Snapshot(TestAccount(1), 1100);
+		CAccountData other = counter.Snapshot(TestAccount(2), 1100);
 		Check(2 == snapshot.m_trades.size() + other.m_trades.size(), "partial fills");
 		Check(100 == other.m_orders[0].m_nFilled && 50 == snapshot.m_orders[0].m_nFilled, "price priority across accounts");
-		Check(!counter.OnDepth(depth, 1100).Ok() && 2 == counter.Snapshot(1, 1100).m_trades.size() + counter.Snapshot(2, 1100).m_trades.size(), "duplicate liquidity");
-		Check(std::get<COperationReceipt>(counter.Execute(Request(Operation::Submit, 1, 10, 200), 1100).m_data).m_orderId == std::get<COperationReceipt>(first.m_data).m_orderId, "idempotency");
-		Check(!counter.Execute(Request(Operation::Submit, 1, 10, 300), 1100).m_result.Ok(), "id conflict");
-		CRequest sell = Request(Operation::Submit, 1, 12, 1);
-		std::get<trade::CSubmitParams>(sell.m_params).m_order.m_side = Side::Sell;
+		Check(!counter.OnDepth(depth, 1100).Ok() && 2 == counter.Snapshot(TestAccount(1), 1100).m_trades.size() + counter.Snapshot(TestAccount(2), 1100).m_trades.size(), "duplicate liquidity");
+		Check(std::get<COperationReceipt>(counter.Execute(Request(Operation::Submit, TestAccount(1), 10, 200), 1100).m_data).m_orderId == std::get<COperationReceipt>(first.m_data).m_orderId, "idempotency");
+		Check(!counter.Execute(Request(Operation::Submit, TestAccount(1), 10, 300), 1100).m_result.Ok(), "id conflict");
+		CReqParam sell = Request(Operation::Submit, TestAccount(1), 12, 1);
+		std::get<trade::CSubmitParam>(sell.m_param).m_order.m_side = Side::Sell;
 		Check(!counter.Execute(sell, 1100).m_result.Ok(), "T+1");
-		CRequest cancel = Request(Operation::Cancel);
-		std::get<trade::CCancelParams>(cancel.m_params).m_orderId = std::get<COperationReceipt>(first.m_data).m_orderId;
+		CReqParam cancel = Request(Operation::Cancel);
+		std::get<trade::CCancelParam>(cancel.m_param).m_orderId = std::get<COperationReceipt>(first.m_data).m_orderId;
 		Check(counter.Execute(cancel, 1200).m_result.Ok(), "cancel");
-		Check(0 == counter.Snapshot(1, 1200).m_account.m_nFrozen, "release freeze");
+		Check(0 == counter.Snapshot(TestAccount(1), 1200).m_account.m_nFrozen, "release freeze");
 		Check(counter.Advance(4100).Ok(), "daycut");
-		Check(0 == counter.Snapshot(1, 4100).m_positions[0].m_nAvailable, "cannot sell before next trading day");
-		std::uint64_t nVersion = counter.Snapshot(1, 4100).m_version;
-		Check(counter.Advance(4200).Ok() && nVersion == counter.Snapshot(1, 4200).m_version, "daycut idempotency");
-		std::get<trade::CSubmitParams>(sell.m_params).m_order.m_clientId = 13;
+		Check(0 == counter.Snapshot(TestAccount(1), 4100).m_positions[0].m_nAvailable, "cannot sell before next trading day");
+		std::uint64_t nVersion = counter.Snapshot(TestAccount(1), 4100).m_version;
+		Check(counter.Advance(4200).Ok() && nVersion == counter.Snapshot(TestAccount(1), 4200).m_version, "daycut idempotency");
+		std::get<trade::CSubmitParam>(sell.m_param).m_order.m_clientId = 13;
 		sell.m_requestId = 13;
 		Check(counter.Execute(sell, 5100).m_result.Ok(), "sell next day");
 		depth.m_sequence = 2;
 		depth.m_nTime = 5100;
 		depth.m_bids[0].m_nPrice = 1000;
 		Check(counter.OnDepth(depth, 5100).Ok(), "sell fill");
-		Check(3 == counter.Snapshot(1, 5100).m_trades.size() + counter.Snapshot(2, 5100).m_trades.size(), "sell recorded");
+		Check(3 == counter.Snapshot(TestAccount(1), 5100).m_trades.size() + counter.Snapshot(TestAccount(2), 5100).m_trades.size(), "sell recorded");
 		std::string strSaved = EncodeState(memory->m_state);
 		CState restored;
 		Check(DecodeState(strSaved, restored) && strSaved == EncodeState(restored), "codec");
 		Check(!DecodeState(strSaved + " bad", restored), "bad codec");
-		std::int64_t nCash = counter.Snapshot(1, 5100).m_account.m_nBalance;
+		std::int64_t nCash = counter.Snapshot(TestAccount(1), 5100).m_account.m_nBalance;
 		counter.Stop();
 		CSimulatedCore restarted(std::make_unique<CStore>(memory));
 		Check(restarted.Start(5200).Ok(), "restart");
-		Check(nCash == restarted.Snapshot(1, 5200).m_account.m_nBalance, "cash persisted");
-		Connect(restarted, 1, 5200);
+		Check(nCash == restarted.Snapshot(TestAccount(1), 5200).m_account.m_nBalance, "cash persisted");
+		Connect(restarted, TestAccount(1), 5200);
 		restarted.OnMarketState(true);
-		Check(restarted.Execute(Request(Operation::Submit, 1, 14), 5200).m_result.Ok() && 3 == restarted.Snapshot(1, 5200).m_trades.size() + restarted.Snapshot(2, 5200).m_trades.size(), "restart requires fresh depth");
+		Check(restarted.Execute(Request(Operation::Submit, TestAccount(1), 14), 5200).m_result.Ok() && 3 == restarted.Snapshot(TestAccount(1), 5200).m_trades.size() + restarted.Snapshot(TestAccount(2), 5200).m_trades.size(), "restart requires fresh depth");
 		memory->m_bFail = true;
-		CRequest failed = Request(Operation::Cancel);
-		std::get<trade::CCancelParams>(failed.m_params).m_orderId = restarted.Snapshot(1, 5200).m_orders.back().m_orderId;
+		CReqParam failed = Request(Operation::Cancel);
+		std::get<trade::CCancelParam>(failed.m_param).m_orderId = restarted.Snapshot(TestAccount(1), 5200).m_orders.back().m_orderId;
 		std::uint64_t nTail = memory->m_state.m_sequence;
 		std::string strBeforeFailure = EncodeState(memory->m_state);
 		Check(!restarted.Execute(failed, 5200).m_result.Ok() && !restarted.Ready() && nTail == memory->m_state.m_sequence, "transaction failure fail closed");
 		Check(strBeforeFailure == EncodeState(memory->m_state), "failed command preserves durable state");
-		Check(restarted.Snapshot(1, 5200).m_account.m_nFrozen == memory->m_state.m_accounts.at(1).m_nFrozen, "failed cancellation restores in-memory freeze");
+		Check(restarted.Snapshot(TestAccount(1), 5200).m_account.m_nFrozen == memory->m_state.m_accounts.at(TestAccount(1)).m_nFrozen, "failed cancellation restores in-memory freeze");
 		restarted.Stop();
 		memory->m_bFail = false;
 		CSimulatedCore replay(std::make_unique<CStore>(memory));
@@ -396,21 +396,45 @@ namespace
 		Check(!replay.Renew().Ok() && !replay.Ready(), "fencing");
 		replay.Stop();
 	}
+	void IdentityIsolation()
+	{
+		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
+		CSimulatedCore counter(std::make_unique<CStore>(memory));
+		Check(counter.Start(0).Ok(), "identity core start");
+		std::vector<_TyAccountIndex> identities{ { 1, "default", "000123" }, { 2, "default", "000123" }, { 1, "other", "000123" }, { 1, "default", "123" } };
+		std::int64_t balance = 10000;
+		for (const auto& account : identities)
+		{
+			Check(counter.AddAccount(account, balance).Ok(), "distinct identity opened");
+			Check(!counter.AddAccount(account, 1).Ok(), "duplicate opening rejected");
+			balance += 10000;
+		}
+		std::string encoded = EncodeState(memory->m_state);
+		CState restored;
+		Check(DecodeState(encoded, restored) && 4 == restored.m_accounts.size(), "all identities survive persistence");
+		Check(10000 == restored.m_accounts.at(identities[0]).m_nBalance && 40000 == restored.m_accounts.at(identities[3]).m_nBalance, "leading zero account remains distinct");
+		_TyAccountIndex special{ 9, "site / \"", "00: account \"" };
+		_TyAccountIndex parsed;
+		Check(DecodeAccount(EncodeAccount(special), parsed) && special == parsed, "tuple encoding preserves delimiters");
+		Check(!DecodeAccount(EncodeAccount(special) + " trailing", parsed), "trailing identity data rejected");
+		counter.Stop();
+	}
 } // namespace
 int main()
 {
 	try
 	{
-		CRequest request;
-		Check(Operation::Synchronize == request.GetOperation(), "default synchronization request");
-		request.m_accountId = 7;
+		CReqParam request;
+		Check(Operation::Funds == request.GetOperation(), "default funds query request");
+		request.m_accountIndex = TestAccount(7);
 		request.m_requestId = 99;
-		request.m_params = CLoginParams{ "broker", "site", "user", "password" };
-		CRequest copied = request;
-		request.m_params = CCancelParams{ 123 };
-		Check(Operation::Login == copied.GetOperation() && "user" == std::get<CLoginParams>(copied.m_params).m_strUser, "copied request owns login parameters");
-		Check(Operation::Cancel == request.GetOperation() && 123 == std::get<CCancelParams>(request.m_params).m_orderId && 7 == request.m_accountId && 99 == request.m_requestId, "payload determines operation while preserving identity");
-		Check(nullptr == std::get_if<CLoginParams>(&request.m_params), "changing operation removes previous parameters");
+		request.m_param = CLoginParam{ "password" };
+		CReqParam copied = request;
+		request.m_param = CCancelParam{ 123 };
+		Check(Operation::Login == copied.GetOperation() && "password" == std::get<CLoginParam>(copied.m_param).m_strPassword, "copied request owns login parameters");
+		Check(Operation::Cancel == request.GetOperation() && 123 == std::get<CCancelParam>(request.m_param).m_orderId && TestAccount(7) == request.m_accountIndex && 99 == request.m_requestId, "payload determines operation while preserving identity");
+		Check(nullptr == std::get_if<CLoginParam>(&request.m_param), "changing operation removes previous parameters");
+		IdentityIsolation();
 		IncrementalState();
 		Run();
 		Boundaries();

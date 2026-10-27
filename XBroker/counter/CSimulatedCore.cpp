@@ -141,16 +141,16 @@ namespace trade
 	}
 	CResult CSimulatedCore::Validate(const CState& state) const
 	{
-		std::map<std::uint64_t, std::int64_t> frozen;
-		std::map<std::pair<std::uint64_t, std::string>, std::int64_t> shares;
-		std::set<std::pair<std::uint64_t, std::uint64_t>> clients;
+		std::map<_TyAccountIndex, std::int64_t> frozen;
+		std::map<std::pair<_TyAccountIndex, std::string>, std::int64_t> shares;
+		std::set<std::pair<_TyAccountIndex, std::uint64_t>> clients;
 		std::map<std::uint64_t, std::int64_t> filled, turnover, fees;
 		for (const auto& item : state.m_trades)
 		{
 			const CTrade& trade = item.second;
 			std::int64_t nMoney = 0;
 			auto order = state.m_orders.find(trade.m_orderId);
-			if (item.first != trade.m_tradeId || state.m_nextTrade <= item.first || state.m_orders.end() == order || order->second.m_accountId != trade.m_accountId || order->second.m_strSecurity != trade.m_strSecurity || order->second.m_side != trade.m_side || 0 >= trade.m_nQuantity || 0 > trade.m_nFee || !Money(trade.m_nPrice, trade.m_nQuantity, trade.m_nPriceScale, nMoney) || !Add(filled[trade.m_orderId], trade.m_nQuantity, filled[trade.m_orderId]) || !Add(turnover[trade.m_orderId], nMoney, turnover[trade.m_orderId]) || !Add(fees[trade.m_orderId], trade.m_nFee, fees[trade.m_orderId]))
+			if (item.first != trade.m_tradeId || state.m_nextTrade <= item.first || state.m_orders.end() == order || order->second.m_accountIndex != trade.m_accountIndex || order->second.m_strSecurity != trade.m_strSecurity || order->second.m_side != trade.m_side || 0 >= trade.m_nQuantity || 0 > trade.m_nFee || !Money(trade.m_nPrice, trade.m_nQuantity, trade.m_nPriceScale, nMoney) || !Add(filled[trade.m_orderId], trade.m_nQuantity, filled[trade.m_orderId]) || !Add(turnover[trade.m_orderId], nMoney, turnover[trade.m_orderId]) || !Add(fees[trade.m_orderId], trade.m_nFee, fees[trade.m_orderId]))
 			{
 				return Reject("trade journal invariant failed");
 			}
@@ -185,7 +185,7 @@ namespace trade
 				return Reject("order/trade journal mismatch");
 			}
 
-			if ((item.first != order.m_orderId) || (state.m_nextOrder <= order.m_orderId) || !state.m_accounts.contains(order.m_accountId) || !clients.emplace(order.m_accountId, order.m_clientId).second || (0 > order.m_nFilled) || (order.m_nFilled > order.m_nQuantity) || (0 > order.m_nFrozen))
+			if ((item.first != order.m_orderId) || (state.m_nextOrder <= order.m_orderId) || !state.m_accounts.contains(order.m_accountIndex) || !clients.emplace(order.m_accountIndex, order.m_clientId).second || (0 > order.m_nFilled) || (order.m_nFilled > order.m_nQuantity) || (0 > order.m_nFrozen))
 			{
 				return Reject("invalid persisted order");
 			}
@@ -193,14 +193,14 @@ namespace trade
 			{
 				if (Side::Buy == order.m_side)
 				{
-					if (!Add(frozen[order.m_accountId], order.m_nFrozen, frozen[order.m_accountId]))
+					if (!Add(frozen[order.m_accountIndex], order.m_nFrozen, frozen[order.m_accountIndex]))
 					{
 						return Reject("frozen overflow");
 					}
 				}
 				else
 				{
-					if (!Add(shares[{ order.m_accountId, order.m_strSecurity }], order.m_nQuantity - order.m_nFilled, shares[{ order.m_accountId, order.m_strSecurity }]))
+					if (!Add(shares[{ order.m_accountIndex, order.m_strSecurity }], order.m_nQuantity - order.m_nFilled, shares[{ order.m_accountIndex, order.m_strSecurity }]))
 					{
 						return Reject("share overflow");
 					}
@@ -213,7 +213,7 @@ namespace trade
 		}
 		for (const auto& item : state.m_accounts)
 		{
-			if ((item.first != item.second.m_accountId) || (0 > item.second.m_nBalance) || (0 > item.second.m_nFrozen) || (item.second.m_nBalance < item.second.m_nFrozen) || (frozen[item.first] != item.second.m_nFrozen))
+			if ((item.first != item.second.m_accountIndex) || (0 > item.second.m_nBalance) || (0 > item.second.m_nFrozen) || (item.second.m_nBalance < item.second.m_nFrozen) || (frozen[item.first] != item.second.m_nFrozen))
 			{
 				return Reject("cash ledger invariant failed");
 			}
@@ -222,7 +222,7 @@ namespace trade
 		{
 			const CPosition& position = item.second;
 			std::int64_t nTotal = 0;
-			if (!state.m_accounts.contains(position.m_accountId) || !Add(position.m_nAvailable, position.m_nFrozen, nTotal) || !Add(nTotal, position.m_nToday, nTotal) || (nTotal != position.m_nTotal) || (position.m_nFrozen != shares[item.first]) || (0 > position.m_nCost))
+			if (!state.m_accounts.contains(position.m_accountIndex) || !Add(position.m_nAvailable, position.m_nFrozen, nTotal) || !Add(nTotal, position.m_nToday, nTotal) || (nTotal != position.m_nTotal) || (position.m_nFrozen != shares[item.first]) || (0 > position.m_nCost))
 			{
 				return Reject("position ledger invariant failed");
 			}
@@ -258,26 +258,26 @@ namespace trade
 		}
 		return result;
 	}
-	CResult CSimulatedCore::AddAccount(std::uint64_t nAccountId, std::int64_t nInitialBalance)
+	CResult CSimulatedCore::AddAccount(const _TyAccountIndex& accountIndex, std::int64_t nInitialBalance)
 	{
 		if (!m_bReady)
 		{
 			return { Error::Unavailable, "counter not ready" };
 		}
-		if (m_state.m_accounts.contains(nAccountId))
+		if (m_state.m_accounts.contains(accountIndex))
 		{
-			return {};
+			return { Error::Conflict, "account already exists" };
 		}
-		if ((0 == nAccountId) || (0 >= nInitialBalance))
+		if ((!IsAccountValid(accountIndex)) || (0 >= nInitialBalance))
 		{
-			return Reject("invalid migration account");
+			return Reject("invalid account opening parameters");
 		}
 		CStateEdit edit(m_state);
 		CState& next = edit.State();
-		edit.Save(&CState::m_accounts, nAccountId);
-		next.m_accounts.emplace(nAccountId, CAccount{ nAccountId, nInitialBalance, 0, false, true });
+		edit.Save(&CState::m_accounts, accountIndex);
+		next.m_accounts.emplace(accountIndex, CAccount{ accountIndex, nInitialBalance, 0, false, true });
 		COrder order;
-		order.m_accountId = nAccountId;
+		order.m_accountIndex = accountIndex;
 		Emit(next, EventKind::Funds, order);
 		return Commit(edit);
 	}
@@ -357,12 +357,12 @@ namespace trade
 		CEvent event;
 		event.m_sequence = ++state.m_sequence;
 		event.m_requestId = 0 == nRequestId ? order.m_requestId : nRequestId;
-		event.m_accountId = order.m_accountId;
+		event.m_accountIndex = order.m_accountIndex;
 		event.m_kind = kind;
 		event.m_order = order;
 		event.m_trade = trade;
-		event.m_account = state.m_accounts.at(order.m_accountId);
-		auto position = state.m_positions.find({ order.m_accountId, order.m_strSecurity });
+		event.m_account = state.m_accounts.at(order.m_accountIndex);
+		auto position = state.m_positions.find({ order.m_accountIndex, order.m_strSecurity });
 		if (state.m_positions.end() != position)
 		{
 			event.m_position = position->second;
@@ -375,7 +375,7 @@ namespace trade
 		for (const auto& item : state.m_orders)
 		{
 			const COrder& previous = item.second;
-			if ((previous.m_accountId == order.m_accountId) && ((previous.m_clientId == order.m_clientId) || ((0 != order.m_strategyId) && (previous.m_strategyId == order.m_strategyId) && (previous.m_signalId == order.m_signalId))))
+			if ((previous.m_accountIndex == order.m_accountIndex) && ((previous.m_clientId == order.m_clientId) || ((0 != order.m_strategyId) && (previous.m_strategyId == order.m_strategyId) && (previous.m_signalId == order.m_signalId))))
 			{
 				if ((previous.m_strSecurity != order.m_strSecurity) || (previous.m_side != order.m_side) || (previous.m_nPrice != order.m_nPrice) || (previous.m_nQuantity != order.m_nQuantity) || (previous.m_nPriceScale != order.m_nPriceScale) || (previous.m_strategyId != order.m_strategyId) || (previous.m_signalId != order.m_signalId))
 				{
@@ -414,8 +414,8 @@ namespace trade
 		{
 			return Reject("invalid side");
 		}
-		edit.Save(&CState::m_accounts, order.m_accountId);
-		CAccount& account = state.m_accounts.at(order.m_accountId);
+		edit.Save(&CState::m_accounts, order.m_accountIndex);
+		CAccount& account = state.m_accounts.at(order.m_accountIndex);
 		if (!account.m_bConnected)
 		{
 			return { Error::Unavailable, "account disconnected" };
@@ -443,7 +443,7 @@ namespace trade
 		}
 		else
 		{
-			auto position = state.m_positions.find({ order.m_accountId, order.m_strSecurity });
+			auto position = state.m_positions.find({ order.m_accountIndex, order.m_strSecurity });
 			if ((state.m_positions.end() == position) || (position->second.m_nAvailable < order.m_nQuantity) || (order.m_nQuantity < rule.m_nSellMinimum) || (0 != (order.m_nQuantity - rule.m_nSellMinimum) % rule.m_nSellStep))
 			{
 				return Reject("invalid sell size or insufficient available position");
@@ -475,18 +475,18 @@ namespace trade
 			return;
 		}
 		edit.Save(&CState::m_orders, order.m_orderId);
-		edit.Save(&CState::m_accounts, order.m_accountId);
+		edit.Save(&CState::m_accounts, order.m_accountIndex);
 		if (Side::Sell == order.m_side)
 		{
-			edit.Save(&CState::m_positions, std::make_pair(order.m_accountId, order.m_strSecurity));
+			edit.Save(&CState::m_positions, std::make_pair(order.m_accountIndex, order.m_strSecurity));
 		}
 		if (Side::Buy == order.m_side)
 		{
-			state.m_accounts.at(order.m_accountId).m_nFrozen -= order.m_nFrozen;
+			state.m_accounts.at(order.m_accountIndex).m_nFrozen -= order.m_nFrozen;
 		}
 		else
 		{
-			CPosition& position = state.m_positions.at({ order.m_accountId, order.m_strSecurity });
+			CPosition& position = state.m_positions.at({ order.m_accountIndex, order.m_strSecurity });
 			position.m_nAvailable += order.m_nQuantity - order.m_nFilled;
 			position.m_nFrozen -= order.m_nQuantity - order.m_nFilled;
 		}
@@ -508,13 +508,13 @@ namespace trade
 			return Reject("fill arithmetic overflow");
 		}
 		std::int64_t nFee = nTotalFee - order.m_nFee;
-		edit.Save(&CState::m_accounts, order.m_accountId);
-		CAccount& account = state.m_accounts.at(order.m_accountId);
-		std::pair<std::uint64_t, std::string> key = std::make_pair(order.m_accountId, order.m_strSecurity);
+		edit.Save(&CState::m_accounts, order.m_accountIndex);
+		CAccount& account = state.m_accounts.at(order.m_accountIndex);
+		std::pair<_TyAccountIndex, std::string> key = std::make_pair(order.m_accountIndex, order.m_strSecurity);
 		edit.Save(&CState::m_orders, order.m_orderId);
 		edit.Save(&CState::m_positions, key);
 		CPosition& position = state.m_positions[key];
-		position.m_accountId = order.m_accountId;
+		position.m_accountIndex = order.m_accountIndex;
 		position.m_strSecurity = order.m_strSecurity;
 		std::int64_t nRemaining = order.m_nQuantity - order.m_nFilled - nQuantity;
 		if (Side::Buy == order.m_side)
@@ -554,7 +554,7 @@ namespace trade
 		order.m_nTurnover = nTurnover;
 		order.m_nFee = nTotalFee;
 		order.m_status = 0 == nRemaining ? Status::Filled : Status::PartiallyFilled;
-		CTrade trade{ state.m_nextTrade++, order.m_orderId, order.m_accountId, order.m_strSecurity, order.m_side, nPrice, nQuantity, nFee, nNow, order.m_nPriceScale };
+		CTrade trade{ state.m_nextTrade++, order.m_orderId, order.m_accountIndex, order.m_strSecurity, order.m_side, nPrice, nQuantity, nFee, nNow, order.m_nPriceScale };
 		edit.Save(&CState::m_trades, trade.m_tradeId);
 		state.m_trades.emplace(trade.m_tradeId, trade);
 		Emit(state, EventKind::Trade, order, trade);
@@ -598,7 +598,7 @@ namespace trade
 		std::vector<std::uint64_t> orders;
 		for (const auto& item : state.m_orders)
 		{
-			if (IsActive(item.second.m_status) && (item.second.m_nDay == day->m_nDay) && (item.second.m_strSecurity == depth.m_strSecurity) && state.m_accounts.at(item.second.m_accountId).m_bConnected)
+			if (IsActive(item.second.m_status) && (item.second.m_nDay == day->m_nDay) && (item.second.m_strSecurity == depth.m_strSecurity) && state.m_accounts.at(item.second.m_accountIndex).m_bConnected)
 			{
 				orders.emplace_back(item.first);
 			}
@@ -679,7 +679,7 @@ namespace trade
 					position.m_nAvailable += position.m_nToday;
 					position.m_nToday = 0;
 					COrder order;
-					order.m_accountId = position.m_accountId;
+					order.m_accountIndex = position.m_accountIndex;
 					order.m_strSecurity = position.m_strSecurity;
 					Emit(next, EventKind::Position, order);
 				}
@@ -702,19 +702,19 @@ namespace trade
 		}
 		return bChanged ? Commit(edit) : CResult{};
 	}
-	CCounterReply CSimulatedCore::Execute(const CRequest& request, std::int64_t nNow)
+	CCounterReply CSimulatedCore::Execute(const CReqParam& request, std::int64_t nNow)
 	{
 		CCounterReply reply;
 		reply.m_requestId = request.m_requestId;
-		reply.m_accountId = request.m_accountId;
+		reply.m_accountIndex = request.m_accountIndex;
 		Operation operation = request.GetOperation();
 		reply.m_operation = operation;
 		reply.m_nTime = nNow;
 		reply.m_version = m_state.m_sequence;
 		std::uint64_t nOrderId = 0;
-		if (0 == request.m_accountId)
+		if (!IsAccountValid(request.m_accountIndex))
 		{
-			reply.m_result = { Error::NotFound, "account_id must be positive" };
+			reply.m_result = { Error::NotFound, "broker_id/site/account required" };
 			return reply;
 		}
 		reply.m_result = Advance(nNow);
@@ -722,7 +722,7 @@ namespace trade
 		{
 			return reply;
 		}
-		if (!m_state.m_accounts.contains(request.m_accountId))
+		if (!m_state.m_accounts.contains(request.m_accountIndex))
 		{
 			reply.m_result = { Error::NotFound, "account not found" };
 			return reply;
@@ -736,24 +736,24 @@ namespace trade
 			{
 				for (const auto& item : next.m_orders)
 				{
-					if ((request.m_accountId == item.second.m_accountId) && IsActive(item.second.m_status))
+					if ((request.m_accountIndex == item.second.m_accountIndex) && IsActive(item.second.m_status))
 					{
 						reply.m_result = Reject("active orders prevent disconnect");
 						return reply;
 					}
 				}
 			}
-			edit.Save(&CState::m_accounts, request.m_accountId);
-			next.m_accounts.at(request.m_accountId).m_bConnected = Operation::Disconnect != operation;
+			edit.Save(&CState::m_accounts, request.m_accountIndex);
+			next.m_accounts.at(request.m_accountIndex).m_bConnected = Operation::Disconnect != operation;
 			COrder order;
-			order.m_accountId = request.m_accountId;
+			order.m_accountIndex = request.m_accountIndex;
 			order.m_requestId = request.m_requestId;
 			Emit(next, EventKind::Session, order);
 		}
 		else if (Operation::Submit == operation)
 		{
-			COrder order = std::get<trade::CSubmitParams>(request.m_params).m_order;
-			order.m_accountId = request.m_accountId;
+			COrder order = std::get<trade::CSubmitParam>(request.m_param).m_order;
+			order.m_accountIndex = request.m_accountIndex;
 			order.m_requestId = request.m_requestId;
 			result = Submit(edit, order, nNow, nOrderId);
 			if (result.Ok())
@@ -788,15 +788,15 @@ namespace trade
 		}
 		else if (Operation::Cancel == operation)
 		{
-			auto order = next.m_orders.find(std::get<trade::CCancelParams>(request.m_params).m_orderId);
-			if ((next.m_orders.end() == order) || (request.m_accountId != order->second.m_accountId))
+			auto order = next.m_orders.find(std::get<trade::CCancelParam>(request.m_param).m_orderId);
+			if ((next.m_orders.end() == order) || (request.m_accountIndex != order->second.m_accountIndex))
 			{
 				result = { Error::NotFound, "order not found" };
 			}
 			else
 			{
 				Cancel(edit, order->second, Status::Cancelled, request.m_requestId);
-				nOrderId = std::get<trade::CCancelParams>(request.m_params).m_orderId;
+				nOrderId = std::get<trade::CCancelParam>(request.m_param).m_orderId;
 			}
 		}
 		else
@@ -892,14 +892,14 @@ namespace trade
 			m_depths.clear();
 		}
 	}
-	CAccountData CSimulatedCore::Snapshot(std::uint64_t nAccountId, std::int64_t nNow) const
+	CAccountData CSimulatedCore::Snapshot(const _TyAccountIndex& accountIndex, std::int64_t nNow) const
 	{
 		CAccountData data;
-		data.m_account.m_accountId = nAccountId;
+		data.m_account.m_accountIndex = accountIndex;
 		data.m_version = m_state.m_sequence;
 		data.m_nTime = nNow;
-		auto iter = m_state.m_accounts.find(nAccountId);
-		if (0 == nAccountId || m_state.m_accounts.end() == iter)
+		auto iter = m_state.m_accounts.find(accountIndex);
+		if (!IsAccountValid(accountIndex) || m_state.m_accounts.end() == iter)
 		{
 			return data;
 		}
@@ -907,21 +907,21 @@ namespace trade
 		data.m_bReady = m_bReady;
 		for (const auto& item : m_state.m_positions)
 		{
-			if (nAccountId == item.second.m_accountId)
+			if (accountIndex == item.second.m_accountIndex)
 			{
 				data.m_positions.emplace_back(item.second);
 			}
 		}
 		for (const auto& item : m_state.m_orders)
 		{
-			if (nAccountId == item.second.m_accountId)
+			if (accountIndex == item.second.m_accountIndex)
 			{
 				data.m_orders.emplace_back(item.second);
 			}
 		}
 		for (const auto& item : m_state.m_trades)
 		{
-			if (nAccountId == item.second.m_accountId)
+			if (accountIndex == item.second.m_accountIndex)
 			{
 				data.m_trades.emplace_back(item.second);
 			}
@@ -939,14 +939,14 @@ namespace trade
 		switch (reply.m_operation)
 		{
 		case Operation::Funds:
-			reply.m_data = m_state.m_accounts.at(reply.m_accountId);
+			reply.m_data = m_state.m_accounts.at(reply.m_accountIndex);
 			break;
 		case Operation::Positions:
 		{
 			std::vector<CPosition> rows;
 			for (const auto& item : m_state.m_positions)
 			{
-				if (reply.m_accountId == item.second.m_accountId)
+				if (reply.m_accountIndex == item.second.m_accountIndex)
 				{
 					rows.emplace_back(item.second);
 				}
@@ -959,7 +959,7 @@ namespace trade
 			std::vector<COrder> rows;
 			for (const auto& item : m_state.m_orders)
 			{
-				if (reply.m_accountId == item.second.m_accountId)
+				if (reply.m_accountIndex == item.second.m_accountIndex)
 				{
 					rows.emplace_back(item.second);
 				}
@@ -972,7 +972,7 @@ namespace trade
 			std::vector<CTrade> rows;
 			for (const auto& item : m_state.m_trades)
 			{
-				if (reply.m_accountId == item.second.m_accountId)
+				if (reply.m_accountIndex == item.second.m_accountIndex)
 				{
 					rows.emplace_back(item.second);
 				}
@@ -980,9 +980,6 @@ namespace trade
 			reply.m_data = std::move(rows);
 			break;
 		}
-		case Operation::Synchronize:
-			reply.m_data = Snapshot(reply.m_accountId, reply.m_nTime);
-			break;
 		default:
 			reply.m_data = COperationReceipt{ nOrderId };
 			break;
@@ -995,5 +992,19 @@ namespace trade
 			return {};
 		}
 		return { m_state.m_events.begin() + static_cast<std::ptrdiff_t>(nSequence), m_state.m_events.end() };
+	}
+} // namespace trade
+
+namespace trade
+{
+	std::vector<CAccount> CSimulatedCore::Accounts() const
+	{
+		std::vector<CAccount> accounts;
+		accounts.reserve(m_state.m_accounts.size());
+		for (const auto& item : m_state.m_accounts)
+		{
+			accounts.emplace_back(item.second);
+		}
+		return accounts;
 	}
 } // namespace trade

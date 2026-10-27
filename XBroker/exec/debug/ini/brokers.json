@@ -1,0 +1,10 @@
+[
+  {
+    "id": 1,
+    "name": "模拟券商",
+    "adapter": "simulated",
+    "sites": [
+      "default"
+    ]
+  }
+]

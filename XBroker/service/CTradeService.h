@@ -6,11 +6,14 @@
 #include <functional>
 #include <mutex>
 #include <unordered_map>
+#include <map>
+#include <set>
+#include "../request/request.pb.h"
 class CRequest;
 class CSession;
 class CTradeService final
 {
-	public:
+public:
 	using _TyPushHandler = std::function<void(const CRequest&)>;
 	CTradeService();
 	~CTradeService();
@@ -21,35 +24,41 @@ class CTradeService final
 	void Stop();
 	bool HandleTradeRequest(const CRequest& req);
 	bool HandleAccountRequest(const CRequest& req);
-	bool HasAccount(std::uint64_t accountId) const;
+	bool HasAccount(const _TyAccountIndex& account) const;
 	const std::string& GetLastError() const;
 	void SetPushHandler(_TyPushHandler&& handler);
 
-	private:
-	bool DispatchRequest(const CRequest& req, const std::string& actor);
-	bool HandleAccountInfo(const CRequest& req, const std::string& actor);
-	bool HandleAccountLogin(const CRequest& req, const std::string& actor);
-	bool HandleAccountQuery(const CRequest& req, const std::string& actor);
-	bool HandleAccountAdd(const CRequest& req, const std::string& actor);
-	bool HandleAccountModify(const CRequest& req, const std::string& actor);
-	bool HandleAccountConnection(const CRequest& req, const std::string& actor);
-	bool HandleAccountLogs(const CRequest& req, const std::string& actor);
-	bool HandleSynchronize(const CRequest& req, const std::string& actor);
-	bool HandleOrderSubmit(const CRequest& req, const std::string& actor);
-	bool HandleOrderCancel(const CRequest& req, const std::string& actor);
-	bool HandlePositionQuery(const CRequest& req, const std::string& actor);
-	bool HandleOrderQuery(const CRequest& req, const std::string& actor);
-	bool HandleTradeQuery(const CRequest& req, const std::string& actor);
-	bool HandleCapabilities(const CRequest& req, const std::string& actor);
-	bool SendRequest(const CRequest& req, trade::CRequest&& param);
-	std::shared_ptr<trade::ITradeCounter> FindCounter(const CRequest& req, std::uint64_t& nAccountId) const;
-	std::unordered_map<_TyRequest, std::function<bool(const CRequest&, const std::string&)>> m_handler;
+private:
+	friend class CLoginServiceTests;
+	bool DispatchRequest(const CRequest& req);
+	bool HandleAccountInfo(const CRequest& req);
+	bool HandleBrokers(const CRequest& req);
+	bool HandleOpen(const CRequest& req);
+	bool HandleDisconnect(const CRequest& req);
+	bool HandleAccountLogin(const CRequest& req);
+	bool HandleAccountQuery(const CRequest& req);
+	bool HandleOrderSubmit(const CRequest& req);
+	bool HandleOrderCancel(const CRequest& req);
+	bool HandlePositionQuery(const CRequest& req);
+	bool HandleOrderQuery(const CRequest& req);
+	bool HandleTradeQuery(const CRequest& req);
+	bool HandleCapabilities(const CRequest& req);
+	bool SendRequest(const CRequest& req, trade::CReqParam&& param);
+	std::shared_ptr<trade::ITradeCounter> FindCounter(const CRequest& req, _TyAccountIndex& account) const;
+	std::unordered_map<_TyRequest, std::function<bool(const CRequest&)>> m_handler;
 	void OnEvent(const trade::CEvent& event);
 	mutable std::mutex m_mtx_accounts;
-	std::mutex m_mtx_operations;
-	std::unordered_map<std::uint64_t, CTradeAccount> m_accounts;
-	std::unordered_map<std::uint64_t, std::uint64_t> m_orderAccounts;
-	std::unordered_map<std::uint64_t, std::uint64_t> m_lastEventSequence;
+	struct CBroker
+	{
+		request::BrokerRecord m_directory;
+		std::string m_strAdapter;
+		std::set<std::string> m_sites;
+	};
+	std::map<std::uint64_t, CBroker> m_brokers;
+	std::map<_TyAccountIndex, CTradeAccount> m_accounts;
+	std::map<_TyAccountIndex, std::shared_ptr<trade::ITradeCounter>> m_logging;
+	std::vector<std::shared_ptr<trade::ITradeCounter>> m_retired;
+	bool m_bStopping{ false };
 	std::shared_ptr<trade::CSimulatedCounter> m_counter;
 	std::string m_strLastError;
 	_TyPushHandler m_pushHandler;

@@ -50,7 +50,7 @@ namespace trade
 		}
 		class CTransaction
 		{
-			public:
+		public:
 			explicit CTransaction(db::IDataBase& session) : m_session(session)
 			{
 			}
@@ -67,7 +67,7 @@ namespace trade
 				return m_bCommitted;
 			}
 
-			private:
+		private:
 			db::IDataBase& m_session;
 			bool m_bCommitted{ false };
 		};
@@ -240,7 +240,7 @@ namespace trade
 		{
 			CState row;
 			row.m_accounts.emplace(item);
-			if (!upsert("accounts", std::to_string(item.first), row))
+			if (!upsert("accounts", EncodeAccount(item.first), row))
 			{
 				return Failure();
 			}
@@ -249,7 +249,7 @@ namespace trade
 		{
 			CState row;
 			row.m_positions.emplace(item);
-			if (!upsert("positions", std::to_string(item.first.first) + ":" + item.first.second, row))
+			if (!upsert("positions", EncodeAccount(item.first.first) + ":" + item.first.second, row))
 			{
 				return Failure();
 			}

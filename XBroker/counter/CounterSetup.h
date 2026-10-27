@@ -9,5 +9,5 @@ namespace trade
 {
 	class CSimulatedCounter;
 	// Startup wiring only: account provisioning and market subscriptions belong to the host.
-	CResult InitializeCounter(const std::unordered_map<std::uint64_t, CTradeAccount>& accounts, const std::string& strRulesPath, CSession& session, std::shared_ptr<CSimulatedCounter>& counter);
+	CResult InitializeCounter(const std::string& strRulesPath, CSession& session, std::shared_ptr<CSimulatedCounter>& counter);
 } // namespace trade

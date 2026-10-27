@@ -123,14 +123,14 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	}
 	switch (request.GetType())
 	{
+	case _TyRequest::BROKER_QUERY:
+	case _TyRequest::SIMULATED_ACCOUNT_OPEN:
 	case _TyRequest::TRADE_ACCOUNT_LOGIN:
 	case _TyRequest::TRADE_ACCOUNT_QUERY:
-	case _TyRequest::TRADE_ACCOUNT_ADD:
-	case _TyRequest::TRADE_ACCOUNT_MODIFY:
-	case _TyRequest::TRADE_ACCOUNT_CONNECT:
+
 	case _TyRequest::TRADE_ACCOUNT_DISCONNECT:
 	case _TyRequest::TRADE_ACCOUNT_INFO_QUERY:
-	case _TyRequest::TRADE_ACCOUNT_LOGS_QUERY:
+
 		m_trader.HandleAccountRequest(request);
 		break;
 	case _TyRequest::TRADE_ORDER_SUBMIT:
@@ -138,7 +138,6 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	case _TyRequest::TRADE_POSITION_QUERY:
 	case _TyRequest::TRADE_ORDER_QUERY:
 	case _TyRequest::TRADE_TRADE_QUERY:
-	case _TyRequest::TRADE_SYNC_QUERY:
 	case _TyRequest::TRADE_CAPABILITIES_QUERY:
 		m_trader.HandleTradeRequest(request);
 		break;

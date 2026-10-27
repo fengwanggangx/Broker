@@ -3,55 +3,58 @@
 #include <iostream>
 #include <stdexcept>
 
-static trade::_TyRequestParams MakeParams(trade::Operation operation)
+static _TyAccountIndex TestAccount(std::uint64_t number)
+{
+	return 0 == number ? _TyAccountIndex{} : _TyAccountIndex{ 1, "default", std::to_string(number) };
+}
+
+static trade::_TyRequestParam MakeParams(trade::Operation operation)
 {
 	switch (operation)
 	{
 	case trade::Operation::Login:
-		return trade::CLoginParams{};
+		return trade::CLoginParam{};
 	case trade::Operation::Connect:
-		return trade::CConnect{};
+		return trade::CConnectParam{};
 	case trade::Operation::Disconnect:
-		return trade::CDisconnect{};
+		return trade::CDisconnectParam{};
 	case trade::Operation::Submit:
-		return trade::CSubmitParams{};
+		return trade::CSubmitParam{};
 	case trade::Operation::Cancel:
-		return trade::CCancelParams{};
+		return trade::CCancelParam{};
 	case trade::Operation::Funds:
-		return trade::CFundsQuery{};
+		return trade::CFundsQueryParam{};
 	case trade::Operation::Positions:
-		return trade::CPositionsQuery{};
+		return trade::CPositionsQueryParam{};
 	case trade::Operation::Orders:
-		return trade::COrdersQuery{};
+		return trade::COrdersQueryParam{};
 	case trade::Operation::Trades:
-		return trade::CTradesQuery{};
-	case trade::Operation::Synchronize:
-		return trade::CSynchronize{};
+		return trade::CDealsQueryParam{};
 	}
 	throw std::runtime_error("invalid operation");
 }
 
 class CDeferredBroker final : public trade::ITradeCounter
 {
-	public:
-	trade::CResult SendRequest(trade::CRequest request, ReplyHandler handler) override
+public:
+	trade::CResult SendRequest(trade::CReqParam request, ReplyHandler handler) override
 	{
 		m_work.emplace_back([this, request = std::move(request), handler = std::move(handler)]()
 		{
 			trade::CEvent event;
-			event.m_accountId = request.m_accountId;
+			event.m_accountIndex = request.m_accountIndex;
 			event.m_requestId = request.m_requestId;
 			event.m_kind = trade::Operation::Submit == request.GetOperation() ? trade::EventKind::Order : trade::EventKind::Session;
-			if (const trade::CSubmitParams* params = std::get_if<trade::CSubmitParams>(&request.m_params); nullptr != params)
+			if (const trade::CSubmitParam* params = std::get_if<trade::CSubmitParam>(&request.m_param); nullptr != params)
 			{
 				event.m_order = params->m_order;
 			}
 			event.m_order.m_orderId = 123;
-			event.m_account = { request.m_accountId, 10000, 0, true, true };
+			event.m_account = { request.m_accountIndex, 10000, 0, true, true };
 			m_handler(event);
 			trade::CCounterReply reply;
 			reply.m_requestId = request.m_requestId;
-			reply.m_accountId = request.m_accountId;
+			reply.m_accountIndex = request.m_accountIndex;
 			reply.m_operation = request.GetOperation();
 			reply.m_data = trade::COperationReceipt{ event.m_order.m_orderId };
 			handler(reply);
@@ -71,7 +74,7 @@ class CDeferredBroker final : public trade::ITradeCounter
 	{
 		m_handler = std::move(handler);
 	}
-	trade::CAccountData Snapshot(std::uint64_t) const override
+	trade::CAccountData Snapshot(const _TyAccountIndex&) const override
 	{
 		return {};
 	}
@@ -84,7 +87,7 @@ class CDeferredBroker final : public trade::ITradeCounter
 		Drain();
 	}
 
-	private:
+private:
 	std::deque<std::function<void()>> m_work;
 	EventHandler m_handler;
 };
@@ -96,25 +99,25 @@ int main()
 	{
 		return adapter;
 	}) ||
-		nullptr != registry.Create({ 1, "missing", {}, {}, {} }))
+		nullptr != registry.Create({ TestAccount(1), "missing" }))
 	{
 		return 1;
 	}
-	std::shared_ptr<trade::ITradeCounter> gateway = registry.Create({ 7, "fake", "test", "site", "external" });
+	std::shared_ptr<trade::ITradeCounter> gateway = registry.Create({ TestAccount(7), "fake" });
 	int nEvents = 0;
 	int nReplies = 0;
 	gateway->SetEventHandler([&nEvents](const trade::CEvent& event)
 	{
-		if (7 == event.m_accountId)
+		if (TestAccount(7) == event.m_accountIndex)
 		{
 			++nEvents;
 		}
 	});
 	for (trade::Operation operation : { trade::Operation::Login, trade::Operation::Submit })
 	{
-		trade::CRequest request;
-		request.m_accountId = 7;
-		request.m_params = MakeParams(operation);
+		trade::CReqParam request;
+		request.m_accountIndex = TestAccount(7);
+		request.m_param = MakeParams(operation);
 		if (!gateway->SendRequest(std::move(request), [&nReplies](const trade::CCounterReply& reply)
 		{
 			if (reply.m_result.Ok())

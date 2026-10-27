@@ -8,23 +8,24 @@ namespace trade
 	// Single-writer deterministic core. The host supplies serialization, time and market input.
 	class CSimulatedCore final
 	{
-		public:
+	public:
 		explicit CSimulatedCore(std::unique_ptr<ICounterStore> store);
 		CResult Start(std::int64_t nNow);
 		void Stop();
 		CResult Renew();
-		CResult AddAccount(std::uint64_t nAccountId, std::int64_t nInitialBalance);
+		CResult AddAccount(const _TyAccountIndex& accountIndex, std::int64_t nInitialBalance);
 		CResult ImportRules(const std::vector<CRule>& rules, const std::vector<CCalendar>& calendar);
-		CCounterReply Execute(const CRequest& request, std::int64_t nNow);
+		CCounterReply Execute(const CReqParam& request, std::int64_t nNow);
 		CResult OnDepth(CDepth depth, std::int64_t nNow);
 		void OnMarketState(bool bAvailable);
 		CResult Advance(std::int64_t nNow);
-		CAccountData Snapshot(std::uint64_t nAccountId, std::int64_t nNow) const;
+		CAccountData Snapshot(const _TyAccountIndex& accountIndex, std::int64_t nNow) const;
 		std::vector<CEvent> EventsAfter(std::uint64_t nSequence) const;
+		std::vector<CAccount> Accounts() const;
 		bool Ready() const;
 		std::uint64_t Version() const;
 
-		private:
+	private:
 		void CompleteReply(CCounterReply& reply, std::uint64_t nOrderId) const;
 		CResult Commit(CStateEdit& edit);
 		CResult Validate(const CState& state) const;
