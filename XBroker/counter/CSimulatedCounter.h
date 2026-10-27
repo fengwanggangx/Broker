@@ -15,7 +15,7 @@ namespace trade
 		CSimulatedCounter(std::unique_ptr<CSimulatedCore> counter, Clock clock);
 		~CSimulatedCounter() override;
 		CResult Start(const std::vector<CAccount>& accounts, const std::vector<CRule>& rules, const std::vector<CCalendar>& calendar);
-		CResult Request(CRequest request, ReplyHandler handler) override;
+		CResult SendRequest(CRequest request, ReplyHandler handler) override;
 		void SetEventHandler(EventHandler handler) override;
 		CAccountData Snapshot(Id nAccountId) const override;
 		std::vector<Operation> Capabilities() const override;

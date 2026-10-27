@@ -45,7 +45,7 @@ namespace trade
 		});
 		return {};
 	}
-	CResult CSimulatedCounter::Request(CRequest request, ReplyHandler handler)
+	CResult CSimulatedCounter::SendRequest(CRequest request, ReplyHandler handler)
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
 		if (0 == request.m_accountId || !m_snapshots.contains(request.m_accountId))

@@ -175,7 +175,7 @@ namespace net
 
 		event_base* base{ nullptr };
 		evhttp_request* request{ nullptr };
-		evhttp_connection* connection{ nullptr };
+		evhttp_connection* id{ nullptr };
 		std::mutex mutex;
 		std::deque<std::string> messages;
 		std::function<void()> closeHandler;
@@ -312,9 +312,9 @@ namespace net
 				request = nullptr;
 				func = std::move(closeHandler);
 			}
-			if (nullptr != connection)
+			if (nullptr != id)
 			{
-				evhttp_connection_set_closecb(connection, nullptr, nullptr);
+				evhttp_connection_set_closecb(id, nullptr, nullptr);
 			}
 			delete pCloseContext;
 			if (nullptr != pRequest)
@@ -505,11 +505,11 @@ namespace net
 		state->self = state;
 		state->base = m_state->base;
 		state->request = m_state->request;
-		state->connection = evhttp_request_get_connection(m_state->request);
+		state->id = evhttp_request_get_connection(m_state->request);
 		state->closeContext = new CHttpStream::State::CloseContext{ state };
-		if (nullptr != state->connection)
+		if (nullptr != state->id)
 		{
-			evhttp_connection_set_closecb(state->connection, CHttpStream::State::ConnectionClose_Callback, state->closeContext);
+			evhttp_connection_set_closecb(state->id, CHttpStream::State::ConnectionClose_Callback, state->closeContext);
 		}
 		if (nullptr != m_state->server)
 		{

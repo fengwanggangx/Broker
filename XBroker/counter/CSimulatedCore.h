@@ -25,7 +25,7 @@ namespace trade
 		Id Version() const;
 
 		private:
-		void CompleteReply(CCounterReply& reply, Id nOrderId, const std::string& strSecurity) const;
+		void CompleteReply(CCounterReply& reply, Id nOrderId) const;
 		CResult Commit(CStateEdit& edit);
 		CResult Validate(const CState& state) const;
 		CResult Submit(CStateEdit& edit, COrder order, std::int64_t nNow, Id& nOrderId);

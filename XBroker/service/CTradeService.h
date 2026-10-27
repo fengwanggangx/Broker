@@ -41,8 +41,8 @@ class CTradeService final
 	bool HandleOrderQuery(const CRequest& req, const std::string& actor);
 	bool HandleTradeQuery(const CRequest& req, const std::string& actor);
 	bool HandleCapabilities(const CRequest& req, const std::string& actor);
-	bool ExecuteTrading(const CRequest& req, trade::CRequest&& operation);
-	std::shared_ptr<trade::ITradeCounter> FindGateway(const CRequest& req, std::uint64_t& nAccountId) const;
+	bool SendRequest(const CRequest& req, trade::CRequest&& param);
+	std::shared_ptr<trade::ITradeCounter> FindCounter(const CRequest& req, std::uint64_t& nAccountId) const;
 	std::unordered_map<_TyRequest, std::function<bool(const CRequest&, const std::string&)>> m_handler;
 	void OnEvent(const trade::CEvent& event);
 	mutable std::mutex m_mtx_accounts;

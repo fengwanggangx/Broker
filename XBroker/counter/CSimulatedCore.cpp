@@ -785,7 +785,7 @@ namespace trade
 						edit.Rollback();
 					}
 					reply.m_result = result;
-					CompleteReply(reply, nOrderId, request.m_strSecurity);
+					CompleteReply(reply, nOrderId);
 					return reply;
 				}
 			}
@@ -805,7 +805,7 @@ namespace trade
 		}
 		else
 		{
-			CompleteReply(reply, nOrderId, request.m_strSecurity);
+			CompleteReply(reply, nOrderId);
 
 			return reply;
 		}
@@ -814,7 +814,7 @@ namespace trade
 			edit.Rollback();
 		}
 		reply.m_result = result.Ok() ? Commit(edit) : result;
-		CompleteReply(reply, nOrderId, request.m_strSecurity);
+		CompleteReply(reply, nOrderId);
 		return reply;
 	}
 	CResult CSimulatedCore::OnDepth(CDepth depth, std::int64_t nNow)
@@ -932,7 +932,7 @@ namespace trade
 		}
 		return data;
 	}
-	void CSimulatedCore::CompleteReply(CCounterReply& reply, Id nOrderId, const std::string& strSecurity) const
+	void CSimulatedCore::CompleteReply(CCounterReply& reply, Id nOrderId) const
 	{
 		reply.m_version = m_state.m_sequence;
 		if (!reply.m_result.Ok())
@@ -950,7 +950,7 @@ namespace trade
 			std::vector<CPosition> rows;
 			for (const auto& item : m_state.m_positions)
 			{
-				if (reply.m_accountId == item.second.m_accountId && (strSecurity.empty() || strSecurity == item.second.m_strSecurity))
+				if (reply.m_accountId == item.second.m_accountId)
 				{
 					rows.emplace_back(item.second);
 				}
@@ -963,7 +963,7 @@ namespace trade
 			std::vector<COrder> rows;
 			for (const auto& item : m_state.m_orders)
 			{
-				if (reply.m_accountId == item.second.m_accountId && (strSecurity.empty() || strSecurity == item.second.m_strSecurity))
+				if (reply.m_accountId == item.second.m_accountId)
 				{
 					rows.emplace_back(item.second);
 				}
@@ -976,7 +976,7 @@ namespace trade
 			std::vector<CTrade> rows;
 			for (const auto& item : m_state.m_trades)
 			{
-				if (reply.m_accountId == item.second.m_accountId && (strSecurity.empty() || strSecurity == item.second.m_strSecurity))
+				if (reply.m_accountId == item.second.m_accountId)
 				{
 					rows.emplace_back(item.second);
 				}

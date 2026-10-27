@@ -5404,7 +5404,7 @@ class TradeCounterReply final : public ::google::protobuf::Message
   public:
   // int32 operation = 3;
   void clear_operation() ;
-  ::int32_t operation() const;
+  ::int32_t param() const;
   void set_operation(::int32_t value);
 
   private:
@@ -10214,7 +10214,7 @@ inline void TradeCounterReply::clear_operation() {
   ::google::protobuf::internal::TSanWrite(&_impl_);
   _impl_.operation_ = 0;
 }
-inline ::int32_t TradeCounterReply::operation() const {
+inline ::int32_t TradeCounterReply::param() const {
   // @@protoc_insertion_point(field_get:request.TradeCounterReply.operation)
   return _internal_operation();
 }
