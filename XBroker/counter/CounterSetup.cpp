@@ -1,4 +1,5 @@
 #include "CounterSetup.h"
+#include "../service/CAdapterRegistry.h"
 #include "CSimulatedCounter.h"
 #include "CStorager.h"
 #include "../system/CSession.h"
@@ -14,6 +15,51 @@ namespace trade
 {
 	namespace
 	{
+		// Each login owns an independent event sink while the adapter shares its ledger.
+		struct CSessionEvents
+		{
+			std::mutex m_mtx_handler;
+			ITradeCounter::EventHandler m_handler;
+		};
+		class CSimulatedSession final : public ITradeCounter
+		{
+		public:
+			CSimulatedSession(std::shared_ptr<CSimulatedCounter> counter, std::shared_ptr<CSessionEvents> events, const _TyAccountIndex& account) : m_counter(std::move(counter)), m_events(std::move(events)), m_account(account)
+			{
+			}
+			CResult SendRequest(CReqParam request, ReplyHandler handler) override
+			{
+				if (m_account != request.m_accountIndex)
+				{
+					return { Error::Rejected, "Session account mismatch" };
+				}
+				return m_counter->SendRequest(std::move(request), std::move(handler));
+			}
+			CAccountData Snapshot(const _TyAccountIndex& account) const override
+			{
+				return m_account == account ? m_counter->Snapshot(account) : CAccountData{};
+			}
+			void SetEventHandler(EventHandler handler) override
+			{
+				std::lock_guard<std::mutex> lock(m_events->m_mtx_handler);
+				m_events->m_handler = std::move(handler);
+			}
+			void Stop() override
+			{
+				SetEventHandler({});
+			}
+
+		private:
+			std::shared_ptr<CSimulatedCounter> m_counter;
+			std::shared_ptr<CSessionEvents> m_events;
+			_TyAccountIndex m_account;
+		};
+		struct CSimulatedSessions
+		{
+			std::mutex m_mtx_sessions;
+			std::map<_TyAccountIndex, std::weak_ptr<CSessionEvents>> m_sessions;
+		};
+
 		std::int64_t Now()
 		{
 			return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -81,7 +127,7 @@ namespace trade
 			return {};
 		}
 	} // namespace
-	CResult InitializeCounter(const std::string& strRulesPath, CSession& session, std::shared_ptr<CSimulatedCounter>& counter)
+	CResult InitializeAdapters(const std::string& strRulesPath, CSession& session, CAdapterRegistry& adapters)
 	{
 		std::vector<CRule> rules;
 		std::vector<CCalendar> calendar;
@@ -168,7 +214,49 @@ namespace trade
 		session.RegisterStateHandler(subscribe);
 		subscribe(session.IsAuthenticated() ? SessionState::Ready : SessionState::Disconnected, "");
 		gateway->OnMarketState(session.IsAuthenticated());
-		counter = std::move(gateway);
+		std::shared_ptr<CSimulatedSessions> sessions = std::make_shared<CSimulatedSessions>();
+		gateway->SetEventHandler([sessions](const CCountEvent& event)
+		{
+			std::shared_ptr<CSessionEvents> events;
+			{
+				std::lock_guard<std::mutex> lock(sessions->m_mtx_sessions);
+				const auto mIter = sessions->m_sessions.find(event.m_accountIndex);
+				if (sessions->m_sessions.end() != mIter)
+				{
+					events = mIter->second.lock();
+				}
+			}
+			if (nullptr == events)
+			{
+				return;
+			}
+			ITradeCounter::EventHandler handler;
+			{
+				std::lock_guard<std::mutex> lock(events->m_mtx_handler);
+				handler = events->m_handler;
+			}
+			if (nullptr != handler)
+			{
+				handler(event);
+			}
+		});
+		if (!adapters.Register("simulated", [gateway, sessions](const CAdapterConfig& config) -> std::shared_ptr<ITradeCounter>
+		{
+			std::shared_ptr<CSessionEvents> events = std::make_shared<CSessionEvents>();
+			std::shared_ptr<ITradeCounter> counter = std::make_shared<CSimulatedSession>(gateway, events, config.m_accountIndex);
+			{
+				std::lock_guard<std::mutex> lock(sessions->m_mtx_sessions);
+				sessions->m_sessions.insert_or_assign(config.m_accountIndex, events);
+			}
+			return counter;
+		}, [gateway]()
+		{
+			gateway->Stop();
+		}))
+		{
+			gateway->Stop();
+			return { Error::Rejected, "Duplicate simulated adapter registration" };
+		}
 		return {};
 	}
 } // namespace trade

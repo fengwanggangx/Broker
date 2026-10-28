@@ -184,7 +184,7 @@ namespace trade
 			{
 				return Failure();
 			}
-			std::map<std::uint64_t, CEvent> events;
+			std::map<std::uint64_t, CCountEvent> events;
 			for (const auto& row : rows)
 			{
 				CState record;

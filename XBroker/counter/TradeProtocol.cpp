@@ -114,7 +114,7 @@ namespace trade::protocol
 		}
 		response.SetData(wire);
 	}
-	void WriteEvent(const CEvent& event, request::TradeEventRecord& wire)
+	void WriteEvent(const CCountEvent& event, request::TradeEventRecord& wire)
 	{
 		wire.set_sequence(event.m_sequence);
 		wire.set_request_id(event.m_requestId);
@@ -123,16 +123,16 @@ namespace trade::protocol
 		wire.set_connected(event.m_account.m_bConnected);
 		switch (event.m_kind)
 		{
-		case EventKind::Order:
+		case EventTy::Order:
 			WriteOrder(event.m_order, *wire.mutable_order());
 			break;
-		case EventKind::Trade:
+		case EventTy::Deal:
 			WriteTrade(event.m_trade, *wire.mutable_trade());
 			break;
-		case EventKind::Position:
+		case EventTy::Position:
 			WritePosition(event.m_position, *wire.mutable_position());
 			break;
-		case EventKind::Funds:
+		case EventTy::Funds:
 			WriteFunds(event.m_account, true, *wire.mutable_funds());
 			break;
 		default:
@@ -150,7 +150,7 @@ namespace trade::protocol
 		return payload;
 	}
 
-	::CRequest Push(const CEvent& event, const CTradeAccountInfo& account)
+	::CRequest Push(const CCountEvent& event, const CTradeAccountInfo& account)
 	{
 		::CRequest push;
 		push.SetId(0);
@@ -161,11 +161,11 @@ namespace trade::protocol
 		push.SetExtraData("account", std::get<2>(event.m_accountIndex));
 		switch (event.m_kind)
 		{
-		case trade::EventKind::Session:
+		case trade::EventTy::Session:
 			push.SetType(_TyRequest::TRADE_ACCOUNT_STATE_PUSH);
 			push.SetData(AccountPayload(account));
 			break;
-		case trade::EventKind::Order:
+		case trade::EventTy::Order:
 		{
 			push.SetType(_TyRequest::TRADE_ORDER_PUSH);
 			request::TradeOrderList rows;
@@ -173,7 +173,7 @@ namespace trade::protocol
 			push.SetData(rows);
 		}
 		break;
-		case trade::EventKind::Trade:
+		case trade::EventTy::Deal:
 		{
 			push.SetType(_TyRequest::TRADE_TRADE_PUSH);
 			request::TradeList rows;
@@ -181,7 +181,7 @@ namespace trade::protocol
 			push.SetData(rows);
 		}
 		break;
-		case trade::EventKind::Funds:
+		case trade::EventTy::Funds:
 		{
 			push.SetType(_TyRequest::TRADE_ACCOUNT_INFO_PUSH);
 			request::TradeAccountInfo rows;
@@ -189,7 +189,7 @@ namespace trade::protocol
 			push.SetData(rows);
 		}
 		break;
-		case trade::EventKind::Position:
+		case trade::EventTy::Position:
 		{
 			push.SetType(_TyRequest::TRADE_POSITION_PUSH);
 			request::TradePositionList rows;

@@ -3,42 +3,39 @@
 #include "CStateEdit.h"
 #include <memory>
 
-namespace trade
+// Single-writer deterministic core. The host supplies serialization, time and market input.
+class CSimulatedCore final
 {
-	// Single-writer deterministic core. The host supplies serialization, time and market input.
-	class CSimulatedCore final
-	{
-	public:
-		explicit CSimulatedCore(std::unique_ptr<ICounterStore> store);
-		CResult Start(std::int64_t nNow);
-		void Stop();
-		CResult Renew();
-		CResult AddAccount(const _TyAccountIndex& accountIndex, std::int64_t nInitialBalance);
-		CResult ImportRules(const std::vector<CRule>& rules, const std::vector<CCalendar>& calendar);
-		CCounterReply Execute(const CReqParam& request, std::int64_t nNow);
-		CResult OnDepth(CDepth depth, std::int64_t nNow);
-		void OnMarketState(bool bAvailable);
-		CResult Advance(std::int64_t nNow);
-		CAccountData Snapshot(const _TyAccountIndex& accountIndex, std::int64_t nNow) const;
-		std::vector<CEvent> EventsAfter(std::uint64_t nSequence) const;
-		std::vector<CAccount> Accounts() const;
-		bool Ready() const;
-		std::uint64_t Version() const;
+public:
+	explicit CSimulatedCore(std::unique_ptr<trade::ICounterStore> store);
+	trade::CResult Start(std::int64_t nNow);
+	void Stop();
+	trade::CResult Renew();
+	trade::CResult AddAccount(const _TyAccountIndex& accountIndex, std::int64_t nInitialBalance);
+	trade::CResult ImportRules(const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar);
+	trade::CCounterReply Execute(const trade::CReqParam& request, std::int64_t nNow);
+	trade::CResult OnDepth(trade::CDepth depth, std::int64_t nNow);
+	void OnMarketState(bool bAvailable);
+	trade::CResult Advance(std::int64_t nNow);
+	trade::CAccountData Snapshot(const _TyAccountIndex& accountIndex, std::int64_t nNow) const;
+	std::vector<trade::CCountEvent> EventsAfter(std::uint64_t nSequence) const;
+	std::vector<trade::CAccount> Accounts() const;
+	bool Ready() const;
+	std::uint64_t Version() const;
 
-	private:
-		void CompleteReply(CCounterReply& reply, std::uint64_t nOrderId) const;
-		CResult Commit(CStateEdit& edit);
-		CResult Validate(const CState& state) const;
-		CResult Submit(CStateEdit& edit, COrder order, std::int64_t nNow, std::uint64_t& nOrderId);
-		void Cancel(CStateEdit& edit, COrder& order, Status status, std::uint64_t nRequestId);
-		CResult Match(CStateEdit& edit, CDepth& depth, std::int64_t nNow);
-		CResult Fill(CStateEdit& edit, COrder& order, const CRule& rule, std::int64_t nPrice, std::int64_t nQuantity, std::int64_t nNow);
-		void Emit(CState& state, EventKind kind, const COrder& order, const CTrade& trade = {}, std::uint64_t nRequestId = 0);
-		const CCalendar* Calendar(std::int64_t nNow) const;
-		std::unique_ptr<ICounterStore> m_store;
-		CState m_state;
-		std::int64_t m_nStartTime{ 0 };
-		std::map<std::string, CDepth> m_depths;
-		bool m_bReady{ false }, m_bMarketAvailable{ false };
-	};
-} // namespace trade
+private:
+	void CompleteReply(trade::CCounterReply& reply, std::uint64_t nOrderId) const;
+	trade::CResult Commit(trade::CStateEdit& edit);
+	trade::CResult Validate(const trade::CState& state) const;
+	trade::CResult Submit(trade::CStateEdit& edit, trade::COrder order, std::int64_t nNow, std::uint64_t& nOrderId);
+	void Cancel(trade::CStateEdit& edit, trade::COrder& order, trade::Status status, std::uint64_t nRequestId);
+	trade::CResult Match(trade::CStateEdit& edit, trade::CDepth& depth, std::int64_t nNow);
+	trade::CResult Fill(trade::CStateEdit& edit, trade::COrder& order, const trade::CRule& rule, std::int64_t nPrice, std::int64_t nQuantity, std::int64_t nNow);
+	void Emit(trade::CState& state, trade::EventTy kind, const trade::COrder& order, const trade::CTrade& trade = {}, std::uint64_t nRequestId = 0);
+	const trade::CCalendar* Calendar(std::int64_t nNow) const;
+	std::unique_ptr<trade::ICounterStore> m_store;
+	trade::CState m_state;
+	std::int64_t m_nStartTime{ 0 };
+	std::map<std::string, trade::CDepth> m_depths;
+	bool m_bReady{ false }, m_bMarketAvailable{ false };
+};

@@ -1,5 +1,4 @@
 #include "CTradeService.h"
-#include "../counter/CSimulatedCounter.h"
 #include "../counter/TradeProtocol.h"
 #include "../common/utility.h"
 #include "../ini/CINIHandler.h"
@@ -37,18 +36,16 @@ namespace
 CTradeService::CTradeService()
 {
 	m_handler = {
-		{ _TyRequest::BROKER_QUERY, std::bind_front(&CTradeService::HandleBrokers, this) },
-		{ _TyRequest::SIMULATED_ACCOUNT_OPEN, std::bind_front(&CTradeService::HandleOpen, this) },
+		{ _TyRequest::SUPPORTED_BROKER_QUERY, std::bind_front(&CTradeService::HandleQueryBrokerSupported, this) },
 		{ _TyRequest::TRADE_ACCOUNT_LOGIN, std::bind_front(&CTradeService::HandleAccountLogin, this) },
-		{ _TyRequest::TRADE_ACCOUNT_QUERY, std::bind_front(&CTradeService::HandleAccountQuery, this) },
-		{ _TyRequest::TRADE_ACCOUNT_INFO_QUERY, std::bind_front(&CTradeService::HandleAccountInfo, this) },
-		{ _TyRequest::TRADE_ACCOUNT_DISCONNECT, std::bind_front(&CTradeService::HandleDisconnect, this) },
+		{ _TyRequest::TRADE_ACCOUNT_LIST_QUERY, std::bind_front(&CTradeService::HandleAccountListQuery, this) },
+		{ _TyRequest::TRADE_ACCOUNT_DISCONNECT, std::bind_front(&CTradeService::HandleAccountDisconnect, this) },
 		{ _TyRequest::TRADE_ORDER_SUBMIT, std::bind_front(&CTradeService::HandleOrderSubmit, this) },
 		{ _TyRequest::TRADE_ORDER_CANCEL, std::bind_front(&CTradeService::HandleOrderCancel, this) },
+		{ _TyRequest::TRADE_FUNDS_QUERY, std::bind_front(&CTradeService::HandleFundsQuery, this) },
 		{ _TyRequest::TRADE_POSITION_QUERY, std::bind_front(&CTradeService::HandlePositionQuery, this) },
 		{ _TyRequest::TRADE_ORDER_QUERY, std::bind_front(&CTradeService::HandleOrderQuery, this) },
-		{ _TyRequest::TRADE_TRADE_QUERY, std::bind_front(&CTradeService::HandleTradeQuery, this) },
-		{ _TyRequest::TRADE_CAPABILITIES_QUERY, std::bind_front(&CTradeService::HandleCapabilities, this) }
+		{ _TyRequest::TRADE_DEAL_QUERY, std::bind_front(&CTradeService::HandleDealQuery, this) },
 	};
 }
 
@@ -57,18 +54,20 @@ CTradeService::~CTradeService()
 	Stop();
 }
 
-bool CTradeService::Initialize(CSession& session)
+bool CTradeService::LoadBrokers()
 {
 	std::string path = ini::CINIHandler::InstanceRef().GetValue(ini::Config::System, "Trade", "brokers_path", std::string("ini/brokers.json"));
 	std::ifstream stream(path);
-	std::string text((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+	std::string strText((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+
 	rapidjson::Document document;
-	document.Parse(text.data(), text.size());
+	document.Parse(strText.data(), strText.size());
 	if (document.HasParseError() || !document.IsArray())
 	{
 		m_strLastError = "Invalid broker directory";
 		return false;
 	}
+
 	for (const auto& value : document.GetArray())
 	{
 		if (!value.IsObject() || !value.HasMember("id") || !value["id"].IsUint64() || 0 == value["id"].GetUint64() || !value.HasMember("name") || !value["name"].IsString() || !value.HasMember("adapter") || !value["adapter"].IsString() || !value.HasMember("sites") || !value["sites"].IsArray())
@@ -76,9 +75,9 @@ bool CTradeService::Initialize(CSession& session)
 			m_strLastError = "Invalid broker configuration";
 			return false;
 		}
-		CBroker broker;
-		broker.m_directory.set_broker_id(value["id"].GetUint64());
-		broker.m_directory.set_name(value["name"].GetString());
+		CBrokerInfo broker;
+		broker.m_brokerId = value["id"].GetUint64();
+		broker.m_strName = value["name"].GetString();
 		broker.m_strAdapter = value["adapter"].GetString();
 		for (const auto& site : value["sites"].GetArray())
 		{
@@ -87,31 +86,13 @@ bool CTradeService::Initialize(CSession& session)
 				m_strLastError = "Invalid or duplicate broker site";
 				return false;
 			}
-			request::BrokerSite* target = broker.m_directory.add_sites();
-			target->set_site(site.GetString());
-			target->set_name(site.GetString());
 		}
-		if (broker.m_sites.empty() || broker.m_directory.name().empty() || !m_brokers.emplace(value["id"].GetUint64(), std::move(broker)).second)
+		if (broker.m_sites.empty() || broker.m_strName.empty() || !m_brokers.emplace(value["id"].GetUint64(), std::move(broker)).second)
 		{
 			m_strLastError = "Empty broker name/sites or duplicate broker id";
 			return false;
 		}
 	}
-	std::string rules = ini::CINIHandler::InstanceRef().GetValue(ini::Config::System, "Trade", "rules_path", std::string());
-	trade::CResult result = trade::InitializeCounter(rules, session, m_counter);
-	if (!result.Ok())
-	{
-		m_strLastError = result.m_strMessage;
-		return false;
-	}
-	m_counter->SetEventHandler([this](const trade::CEvent& event)
-	{
-		OnEvent(event);
-	});
-	m_adapters.Register("simulated", [this](const trade::CAdapterConfig&)
-	{
-		return m_counter;
-	});
 	for (const auto& item : m_brokers)
 	{
 		if (!m_adapters.Contains(item.second.m_strAdapter))
@@ -121,6 +102,11 @@ bool CTradeService::Initialize(CSession& session)
 		}
 	}
 	return true;
+}
+
+bool CTradeService::Initialize()
+{
+	return LoadBrokers();
 }
 
 void CTradeService::Stop()
@@ -147,10 +133,7 @@ void CTradeService::Stop()
 			counter->Stop();
 		}
 	}
-	if (nullptr != m_counter)
-	{
-		m_counter->Stop();
-	}
+	m_adapters.Stop();
 }
 
 const std::string& CTradeService::GetLastError() const
@@ -176,14 +159,14 @@ bool CTradeService::HandleTradeRequest(const CRequest& req)
 
 bool CTradeService::DispatchRequest(const CRequest& req)
 {
-	std::vector<std::shared_ptr<trade::ITradeCounter>> retired;
+	std::vector<std::shared_ptr<trade::ITradeCounter>> counters;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
-		retired.swap(m_retired);
+		counters.swap(m_retired);
 	}
-	for (const auto& counter : retired)
+	for (const auto& v : counters)
 	{
-		counter->Stop();
+		v->Stop();
 	}
 	const auto mIter = m_handler.find(req.GetType());
 	if (m_handler.end() == mIter)
@@ -194,36 +177,23 @@ bool CTradeService::DispatchRequest(const CRequest& req)
 	return mIter->second(req);
 }
 
-bool CTradeService::HandleBrokers(const CRequest& req)
+bool CTradeService::HandleQueryBrokerSupported(const CRequest& req)
 {
 	CRequest response = Response(req);
 	request::BrokerList list;
 	for (const auto& item : m_brokers)
 	{
-		*list.add_brokers() = item.second.m_directory;
+		request::BrokerRecord* broker = list.add_brokers();
+		broker->set_broker_id(item.second.m_brokerId);
+		broker->set_name(item.second.m_strName);
+		for (const auto& site : item.second.m_sites)
+		{
+			request::BrokerSite* target = broker->add_sites();
+			target->set_site(site);
+			target->set_name(site);
+		}
 	}
 	response.SetData(list);
-	return net::SendRequest(req.GetConnectionId(), response);
-}
-
-bool CTradeService::HandleOpen(const CRequest& req)
-{
-	_TyAccountIndex account;
-	std::int64_t balance = 0;
-	if (!ReadAccountIdentity(req, account) || !utility::to_number(req.GetExtraData("initial_balance"), balance) || 0 >= balance)
-	{
-		net::SendError(req.GetConnectionId(), req, 1202, "Valid identity and positive initial_balance required");
-		return false;
-	}
-	const auto mIter = m_brokers.find(std::get<0>(account));
-	if (m_brokers.end() == mIter || "simulated" != mIter->second.m_strAdapter || !mIter->second.m_sites.contains(std::get<1>(account)))
-	{
-		net::SendError(req.GetConnectionId(), req, 3, "Broker does not provide simulated account opening");
-		return false;
-	}
-	trade::CResult result = m_counter->AddAccount(account, balance);
-	CRequest response = Response(req);
-	response.SetErrorInfo(static_cast<int>(result.m_error), result.m_strMessage);
 	return net::SendRequest(req.GetConnectionId(), response);
 }
 
@@ -274,10 +244,9 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		net::SendError(req.GetConnectionId(), req, 3, "Adapter unavailable");
 		return false;
 	}
-	if (counter != m_counter)
 	{
 		std::weak_ptr<trade::ITradeCounter> weak = counter;
-		counter->SetEventHandler([this, account, weak](const trade::CEvent& event)
+		counter->SetEventHandler([this, account, weak](const trade::CCountEvent& event)
 		{
 			{
 				std::lock_guard<std::mutex> lock(m_mtx_accounts);
@@ -306,7 +275,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 	login.m_param = trade::CLoginParam{ req.GetExtraData("password") };
 	net::_TyConnectionId connection = req.GetConnectionId();
 	std::uint64_t requestId = req.GetId();
-	std::string brokerName = broker->second.m_directory.name();
+	std::string brokerName = broker->second.m_strName;
 	trade::CResult queued = counter->SendRequest(std::move(login), [this, account, connection, requestId, brokerName](const trade::CCounterReply& reply)
 	{
 		CRequest response;
@@ -339,7 +308,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 				}
 				m_accounts.insert_or_assign(account, CTradeAccount{ info, counter });
 			}
-			else if (nullptr != counter && counter != m_counter)
+			else if (nullptr != counter)
 			{
 				m_retired.emplace_back(std::move(counter));
 			}
@@ -364,12 +333,13 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		m_logging.erase(account);
+		m_retired.emplace_back(counter);
 		net::SendError(connection, req, static_cast<int>(queued.m_error), queued.m_strMessage);
 	}
 	return queued.Ok();
 }
 
-bool CTradeService::HandleAccountQuery(const CRequest& req)
+bool CTradeService::HandleAccountListQuery(const CRequest& req)
 {
 	CRequest response = Response(req);
 	request::TradeAccountList list;
@@ -384,14 +354,14 @@ bool CTradeService::HandleAccountQuery(const CRequest& req)
 	return net::SendRequest(req.GetConnectionId(), response);
 }
 
-bool CTradeService::HandleAccountInfo(const CRequest& req)
+bool CTradeService::HandleFundsQuery(const CRequest& req)
 {
 	trade::CReqParam param;
 	param.m_param = trade::CFundsQueryParam{};
 	return SendRequest(req, std::move(param));
 }
 
-bool CTradeService::HandleDisconnect(const CRequest& req)
+bool CTradeService::HandleAccountDisconnect(const CRequest& req)
 {
 	trade::CReqParam param;
 	param.m_param = trade::CDisconnectParam{};
@@ -440,7 +410,7 @@ bool CTradeService::HandleOrderQuery(const CRequest& req)
 	param.m_param = trade::COrdersQueryParam{};
 	return SendRequest(req, std::move(param));
 }
-bool CTradeService::HandleTradeQuery(const CRequest& req)
+bool CTradeService::HandleDealQuery(const CRequest& req)
 {
 	trade::CReqParam param;
 	param.m_param = trade::CDealsQueryParam{};
@@ -462,24 +432,6 @@ std::shared_ptr<trade::ITradeCounter> CTradeService::FindCounter(const CRequest&
 		return nullptr;
 	}
 	return mIter->second.m_counter;
-}
-
-bool CTradeService::HandleCapabilities(const CRequest& req)
-{
-	_TyAccountIndex account;
-	std::shared_ptr<trade::ITradeCounter> counter = FindCounter(req, account);
-	if (nullptr == counter)
-	{
-		return false;
-	}
-	CRequest response = Response(req);
-	std::vector<std::uint64_t> operations;
-	for (trade::Operation operation : counter->Capabilities())
-	{
-		operations.emplace_back(static_cast<std::uint64_t>(operation) + 1);
-	}
-	response.SetExtraData("operations", operations);
-	return net::SendRequest(req.GetConnectionId(), response);
 }
 
 bool CTradeService::SendRequest(const CRequest& req, trade::CReqParam&& param)
@@ -512,7 +464,7 @@ bool CTradeService::SendRequest(const CRequest& req, trade::CReqParam&& param)
 	return queued.Ok();
 }
 
-void CTradeService::OnEvent(const trade::CEvent& event)
+void CTradeService::OnEvent(const trade::CCountEvent& event)
 {
 	_TyPushHandler handler;
 	CTradeAccountInfo info;
@@ -523,7 +475,7 @@ void CTradeService::OnEvent(const trade::CEvent& event)
 		{
 			return;
 		}
-		if (trade::EventKind::Session == event.m_kind)
+		if (trade::EventTy::Session == event.m_kind)
 		{
 			account->second.m_info.m_state = event.m_account.m_bConnected ? TradeAccountState::Connected : TradeAccountState::Disconnected;
 		}

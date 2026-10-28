@@ -12,11 +12,10 @@ XBroker 是 C++20 柜台接入服务。账户身份由 `broker_id`、`site`、`a
 
 券商 ID 必须非零且唯一；名称用于展示，适配器键选择已注册的柜台实现，站点必须非空且不重复。未知适配器导致启动失败。真实券商通过 `CAdapterRegistry` 注册，当前不包含真实券商 SDK。
 
-`BROKER_QUERY`（61）返回券商和站点目录。`TRADE_ACCOUNT_LOGIN`（8）通过 extra 传入 `broker_id/site/account/password`。登录时动态创建会话，成功后加入账户目录；并发重复登录返回冲突，已连接账户复用会话。失败账户不进入可用目录。密码仅在登录请求和适配器内部使用，不写入账户目录或数据库。
+`SUPPORTED_BROKER_QUERY`（61）返回券商和站点目录。`TRADE_ACCOUNT_LOGIN`（8）通过 extra 传入 `broker_id/site/account/password`。登录时动态创建会话，成功后加入账户目录；并发重复登录返回冲突，已连接账户复用会话。失败账户不进入可用目录。密码仅在登录请求和适配器内部使用，不写入账户目录或数据库。
 
-`TRADE_ACCOUNT_QUERY`（9）只列出本次运行已成功登录的账户。断线账户保留状态；Broker 重启后不自动登录，客户端重新提交凭据。后续资金、持仓、委托、成交及交易请求都携带三个身份字段，分别查询，不提供全量账户请求。
+`TRADE_ACCOUNT_LIST_QUERY`（9）只列出本次运行已成功登录的账户。断线账户保留状态；Broker 重启后不自动登录，客户端重新提交凭据。后续资金、持仓、委托、成交及交易请求都携带三个身份字段，分别查询，不提供全量账户请求。
 
-模拟柜台独立提供 `SIMULATED_ACCOUNT_OPEN`（62），参数为三个身份字段及正整数 `initial_balance`（分）。开户持久化账本但不自动登录；重复开户拒绝，未知账号登录失败，重登和重启不会重复注资。只有配置到 simulated 适配器的券商可以使用此操作。
 
 ## 数据与部署
 
@@ -36,3 +35,7 @@ python tests/check_contracts.py
 `tests/service_integration.py` 必须连接隔离 MySQL，以 `--binary --socket --mysql-port` 指定测试环境，可添加 `--xengine-binary` 验证终端协议到 XEngine/Broker 的链路。测试创建并清理自身进程命名的数据库和测试用户，使用合成行情源，不连接真实券商。
 
 协议从 request.proto 使用 protoc 29.3 生成，并同步四个项目；不得手工修改生成文件。四端身份及请求枚举检查位于 `XTrader/tests/test_trade_account_protocol.py`。
+
+服务不提供开户操作。模拟适配器仅登录已有持久化账本中的账户，未知账号登录失败；登录不创建账户或注入资金。
+
+`tests/service_integration.py` 通过 `--ledger-fixture` 接收预置账本 SQL（包含表结构），使用券商1/default/000123、券商1/other/000123、券商2/default/000123、券商1/default/123，初始余额依次为10000000、20000000、30000000、40000000分。

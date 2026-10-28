@@ -24,11 +24,6 @@ class CLoginServiceTests
 			return {};
 		}
 
-		std::vector<trade::Operation> Capabilities() const override
-		{
-			return { trade::Operation::Login };
-		}
-
 		void Complete(bool success)
 		{
 			std::pair<trade::CReqParam, ReplyHandler> work = std::move(m_pending.front());
@@ -46,7 +41,7 @@ class CLoginServiceTests
 
 		void Emit(const _TyAccountIndex& account, bool connected)
 		{
-			trade::CEvent event;
+			trade::CCountEvent event;
 			event.m_accountIndex = account;
 			event.m_account.m_bConnected = connected;
 			m_events(event);
@@ -77,10 +72,10 @@ public:
 	static void Run()
 	{
 		CTradeService service;
-		CTradeService::CBroker broker;
+		CBrokerInfo broker;
 		broker.m_strAdapter = "fake";
-		broker.m_directory.set_broker_id(17);
-		broker.m_directory.set_name("Broker");
+		broker.m_brokerId = 17;
+		broker.m_strName = "Broker";
 		broker.m_sites.emplace("default");
 		service.m_brokers.emplace(17, std::move(broker));
 		std::vector<std::shared_ptr<CFake>> sessions;

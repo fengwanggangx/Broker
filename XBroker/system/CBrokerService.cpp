@@ -1,4 +1,5 @@
 #include "CBrokerService.h"
+#include "../counter/CounterSetup.h"
 #include "../request/request.h"
 #include "../network/CTcpServer.h"
 #include "../ini/CINIHandler.h"
@@ -33,7 +34,14 @@ bool CBrokerService::Initialize()
 		m_strLastError = "XBroker service token is required";
 		return false;
 	}
-	if (!m_trader.Initialize(*m_pSession))
+	std::string rules = ini::CINIHandler::InstanceRef().GetValue(ini::Config::System, "Trade", "rules_path", std::string());
+	trade::CResult result = trade::InitializeAdapters(rules, *m_pSession, m_trader.Adapters());
+	if (!result.Ok())
+	{
+		m_strLastError = result.m_strMessage;
+		return false;
+	}
+	if (!m_trader.Initialize())
 	{
 		m_strLastError = m_trader.GetLastError();
 		return false;
@@ -123,13 +131,12 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	}
 	switch (request.GetType())
 	{
-	case _TyRequest::BROKER_QUERY:
-	case _TyRequest::SIMULATED_ACCOUNT_OPEN:
+	case _TyRequest::SUPPORTED_BROKER_QUERY:
 	case _TyRequest::TRADE_ACCOUNT_LOGIN:
-	case _TyRequest::TRADE_ACCOUNT_QUERY:
+	case _TyRequest::TRADE_ACCOUNT_LIST_QUERY:
 
 	case _TyRequest::TRADE_ACCOUNT_DISCONNECT:
-	case _TyRequest::TRADE_ACCOUNT_INFO_QUERY:
+	case _TyRequest::TRADE_FUNDS_QUERY:
 
 		m_trader.HandleAccountRequest(request);
 		break;
@@ -137,8 +144,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	case _TyRequest::TRADE_ORDER_CANCEL:
 	case _TyRequest::TRADE_POSITION_QUERY:
 	case _TyRequest::TRADE_ORDER_QUERY:
-	case _TyRequest::TRADE_TRADE_QUERY:
-	case _TyRequest::TRADE_CAPABILITIES_QUERY:
+	case _TyRequest::TRADE_DEAL_QUERY:
 		m_trader.HandleTradeRequest(request);
 		break;
 	default:

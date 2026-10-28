@@ -97,6 +97,7 @@ def main():
     parser.add_argument('--socket', required=True)
     parser.add_argument('--mysql-port', type=int, required=True)
     parser.add_argument('--xengine-binary')
+    parser.add_argument('--ledger-fixture', required=True, help='SQL schema and preseeded simulation ledger for the four test identities; balances 10000000/20000000/30000000/40000000 cents')
     args = parser.parse_args()
     source = pathlib.Path(__file__).resolve().parents[1]/'XBroker'
     root = source.parents[1]
@@ -106,6 +107,7 @@ def main():
     def sql(query):
         return subprocess.check_output(['mysql','--socket='+args.socket,'-uroot','-N','-B','-e',query], text=True)
     sql('CREATE DATABASE '+database)
+    subprocess.run(['mysql','--socket='+args.socket,'-uroot',database], input=pathlib.Path(args.ledger_fixture).read_text(), text=True, check=True)
     sql('CREATE DATABASE '+engine_database)
     sql("CREATE USER '"+engine_user+"'@'127.0.0.1' IDENTIFIED BY 'identity-test-password'")
     sql("GRANT ALL ON "+engine_database+".* TO '"+engine_user+"'@'127.0.0.1'")
@@ -142,13 +144,9 @@ def main():
             assert not parse(one(client.ok(9),31)).get(1,[]), 'startup published accounts'
             assert len(parse(one(client.ok(61),42)).get(1,[])) == 2, 'broker directory'
             identity=dict(broker_id=1,site='default',account='000123')
-            assert one(client.call(8,**identity,password='secret'),6) != 0, 'unknown account login accepted'
+            assert one(client.call(8,**dict(identity,account='unknown'),password='secret'),6) != 0, 'unknown account login accepted'
             for changed in [dict(broker_id=999),dict(site='missing')]:
                 assert one(client.call(8,**dict(identity,**changed),password='secret'),6) != 0
-            for target,balance in [(identity,10000000),(dict(identity,site='other'),20000000),(dict(identity,broker_id=2),30000000),(dict(identity,account='123'),40000000)]:
-                client.ok(62,**target,initial_balance=balance)
-                assert one(client.call(62,**target,initial_balance=1),6) != 0, 'duplicate open reset funds'
-            assert not parse(one(client.ok(9),31)).get(1,[]), 'opening implicitly logged in'
             for target in [identity,dict(identity,site='other'),dict(identity,broker_id=2),dict(identity,account='123')]:
                 response=client.ok(8,**target,password='secret')
                 record=parse(one(response,41)); assert one(record,15) == target['account'].encode()

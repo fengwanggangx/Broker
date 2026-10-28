@@ -154,8 +154,8 @@ namespace
 				}
 				if (Operation::Submit == request.GetOperation())
 				{
-					CEvent event;
-					event.m_kind = EventKind::Order;
+					CCountEvent event;
+					event.m_kind = EventTy::Order;
 					event.m_accountIndex = TestAccount(1);
 					event.m_order = std::get<trade::CSubmitParam>(request.m_param).m_order;
 					event.m_order.m_accountIndex = TestAccount(1);
@@ -185,10 +185,6 @@ namespace
 			snapshot.m_account = { TestAccount(1), 1000000, 0, true, true };
 			return snapshot;
 		}
-		std::vector<Operation> Capabilities() const override
-		{
-			return { Operation::Connect, Operation::Submit, Operation::Funds, Operation::Orders, Operation::Positions, Operation::Trades, Operation::Cancel };
-		}
 		void Stop() override
 		{
 			m_work.clear();
@@ -210,9 +206,9 @@ namespace
 	void Contract(ITradeCounter& gateway, const std::function<void()>& pump)
 	{
 		std::atomic_int events{ 0 };
-		gateway.SetEventHandler([&events](const CEvent& event)
+		gateway.SetEventHandler([&events](const CCountEvent& event)
 		{
-			if (EventKind::Order == event.m_kind)
+			if (EventTy::Order == event.m_kind)
 			{
 				++events;
 			}
@@ -308,17 +304,17 @@ namespace
 			edit.Save(&CState::m_orders, std::uint64_t{ 1 });
 			state.m_orders.emplace(1, COrder{});
 			state.m_nextOrder++;
-			state.m_events.push_back(CEvent{});
+			state.m_events.push_back(CCountEvent{});
 			CState changes = edit.Changes();
 			Check(1 == changes.m_accounts.size() && 1 == changes.m_orders.size() && changes.m_trades.empty() && 1 == changes.m_events.size(), "sparse delta excludes untouched history");
 		}
 		Check(strBefore == EncodeState(state), "journal restores existing and inserted rows and metadata");
 		CAccountData cache;
 		cache.m_account.m_accountIndex = TestAccount(1);
-		CEvent event;
+		CCountEvent event;
 		event.m_accountIndex = TestAccount(1);
 		event.m_account = state.m_accounts.at(TestAccount(1));
-		event.m_kind = EventKind::Order;
+		event.m_kind = EventTy::Order;
 		event.m_order.m_orderId = 1;
 		event.m_order.m_accountIndex = TestAccount(1);
 		UpdateAccountData(cache, event);

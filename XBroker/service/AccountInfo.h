@@ -1,6 +1,7 @@
 #pragma once
 #include "../request/AccountIdentity.h"
 #include <memory>
+#include <set>
 
 namespace trade
 {
@@ -13,6 +14,14 @@ enum class TradeAccountState
 	Connected,
 	Error,
 	Connecting
+};
+
+struct CBrokerInfo
+{
+	std::uint64_t m_brokerId{ 0 };
+	std::string m_strName;
+	std::string m_strAdapter;
+	std::set<std::string> m_sites;
 };
 
 struct CTradeAccountInfo

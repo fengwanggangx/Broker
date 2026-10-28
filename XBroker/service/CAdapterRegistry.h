@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 #include <unordered_map>
 namespace trade
 {
@@ -15,10 +16,19 @@ namespace trade
 	class CAdapterRegistry final
 	{
 	public:
-		using Factory = std::function<std::shared_ptr<ITradeCounter>(const CAdapterConfig&)>;
-		bool Register(const std::string& strKey, Factory factory)
+		using _TyStopHandler = std::function<void()>;
+		using _TyFactory = std::function<std::shared_ptr<ITradeCounter>(const CAdapterConfig&)>;
+		bool Register(const std::string& strKey, _TyFactory factory, _TyStopHandler stop = {})
 		{
-			return !strKey.empty() && nullptr != factory && m_factories.emplace(strKey, std::move(factory)).second;
+			if (strKey.empty() || nullptr == factory || !m_factories.emplace(strKey, std::move(factory)).second)
+			{
+				return false;
+			}
+			if (nullptr != stop)
+			{
+				m_stoppers.emplace_back(std::move(stop));
+			}
+			return true;
 		}
 		bool Contains(const std::string& key) const
 		{
@@ -27,11 +37,20 @@ namespace trade
 
 		std::shared_ptr<ITradeCounter> Create(const CAdapterConfig& config) const
 		{
-			auto iter = m_factories.find(config.m_strAdapter);
+			const auto iter = m_factories.find(config.m_strAdapter);
 			return m_factories.end() == iter ? nullptr : iter->second(config);
 		}
 
+		void Stop()
+		{
+			for (const auto& stop : m_stoppers)
+			{
+				stop();
+			}
+		}
+
 	private:
-		std::unordered_map<std::string, Factory> m_factories;
+		std::unordered_map<std::string, _TyFactory> m_factories;
+		std::vector<_TyStopHandler> m_stoppers;
 	};
 } // namespace trade

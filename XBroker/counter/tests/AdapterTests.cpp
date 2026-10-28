@@ -41,10 +41,10 @@ public:
 	{
 		m_work.emplace_back([this, request = std::move(request), handler = std::move(handler)]()
 		{
-			trade::CEvent event;
+			trade::CCountEvent event;
 			event.m_accountIndex = request.m_accountIndex;
 			event.m_requestId = request.m_requestId;
-			event.m_kind = trade::Operation::Submit == request.GetOperation() ? trade::EventKind::Order : trade::EventKind::Session;
+			event.m_kind = trade::Operation::Submit == request.GetOperation() ? trade::EventTy::Order : trade::EventTy::Session;
 			if (const trade::CSubmitParam* params = std::get_if<trade::CSubmitParam>(&request.m_param); nullptr != params)
 			{
 				event.m_order = params->m_order;
@@ -78,10 +78,6 @@ public:
 	{
 		return {};
 	}
-	std::vector<trade::Operation> Capabilities() const override
-	{
-		return { trade::Operation::Login, trade::Operation::Submit };
-	}
 	void Stop() override
 	{
 		Drain();
@@ -106,7 +102,7 @@ int main()
 	std::shared_ptr<trade::ITradeCounter> gateway = registry.Create({ TestAccount(7), "fake" });
 	int nEvents = 0;
 	int nReplies = 0;
-	gateway->SetEventHandler([&nEvents](const trade::CEvent& event)
+	gateway->SetEventHandler([&nEvents](const trade::CCountEvent& event)
 	{
 		if (TestAccount(7) == event.m_accountIndex)
 		{
@@ -134,7 +130,7 @@ int main()
 		return 3;
 	}
 	adapter->Drain();
-	if (2 != nReplies || 2 != nEvents || 2 != gateway->Capabilities().size())
+	if (2 != nReplies || 2 != nEvents)
 	{
 		return 4;
 	}
