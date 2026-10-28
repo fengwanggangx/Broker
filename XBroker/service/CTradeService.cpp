@@ -1,6 +1,7 @@
 #include "CTradeService.h"
 #include "../counter/TradeProtocol.h"
 #include "../common/utility.h"
+#include "../common/container.h"
 #include "../ini/CINIHandler.h"
 #include "../network/CNetTools.h"
 #include "../request/request.pb.h"
@@ -144,7 +145,7 @@ const std::string& CTradeService::GetLastError() const
 bool CTradeService::HasAccount(const _TyAccountIndex& account) const
 {
 	std::lock_guard<std::mutex> lock(m_mtx_accounts);
-	return m_accounts.contains(account);
+	return container::with(m_accounts, account);
 }
 
 bool CTradeService::HandleAccountRequest(const CRequest& req)
@@ -164,9 +165,9 @@ bool CTradeService::DispatchRequest(const CRequest& req)
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		counters.swap(m_retired);
 	}
-	for (const auto& v : counters)
+	for (const auto& counter : counters)
 	{
-		v->Stop();
+		counter->Stop();
 	}
 	const auto mIter = m_handler.find(req.GetType());
 	if (m_handler.end() == mIter)
@@ -206,41 +207,53 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		return false;
 	}
 	const auto broker = m_brokers.find(std::get<0>(account));
-	if (m_brokers.end() == broker || !broker->second.m_sites.contains(std::get<1>(account)))
+	if (m_brokers.end() == broker || !container::with(broker->second.m_sites, std::get<1>(account)))
 	{
 		net::SendError(req.GetConnectionId(), req, 3, "Unknown broker or site");
 		return false;
 	}
+	bool bLoginBlocked = false;
+	bool bConnected = false;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
-		if (m_bStopping || m_logging.contains(account))
+		bLoginBlocked = m_bStopping || container::with(m_logging, account);
+		if (!bLoginBlocked)
 		{
-			net::SendError(req.GetConnectionId(), req, 6, "Login in progress or service stopping");
-			return false;
+			const auto mIter = m_accounts.find(account);
+			bConnected = m_accounts.end() != mIter && TradeAccountState::Connected == mIter->second.m_info.m_state;
+			if (!bConnected)
+			{
+				if (m_accounts.end() != mIter)
+				{
+					mIter->second.m_info.m_state = TradeAccountState::Connecting;
+					mIter->second.m_info.m_strLastError.clear();
+				}
+				m_logging.emplace(account, nullptr);
+			}
 		}
-		const auto existing = m_accounts.find(account);
-		if (m_accounts.end() != existing && TradeAccountState::Connected == existing->second.m_info.m_state)
-		{
-			CRequest response = Response(req);
-			trade::CCounterReply reply;
-			reply.m_accountIndex = account;
-			reply.m_operation = trade::Operation::Login;
-			reply.m_data = trade::COperationReceipt{};
-			trade::protocol::WriteReply(reply, response);
-			return net::SendRequest(req.GetConnectionId(), response);
-		}
-		if (m_accounts.end() != existing)
-		{
-			existing->second.m_info.m_state = TradeAccountState::Connecting;
-			existing->second.m_info.m_strLastError.clear();
-		}
-		m_logging.emplace(account, nullptr);
+	}
+	if (bLoginBlocked)
+	{
+		net::SendError(req.GetConnectionId(), req, 6, "Login in progress or service stopping");
+		return false;
+	}
+	if (bConnected)
+	{
+		CRequest response = Response(req);
+		trade::CCounterReply reply;
+		reply.m_accountIndex = account;
+		reply.m_operation = trade::Operation::Login;
+		reply.m_data = trade::COperationReceipt{};
+		trade::protocol::WriteReply(reply, response);
+		return net::SendRequest(req.GetConnectionId(), response);
 	}
 	std::shared_ptr<trade::ITradeCounter> counter = m_adapters.Create({ account, broker->second.m_strAdapter });
 	if (nullptr == counter)
 	{
-		std::lock_guard<std::mutex> lock(m_mtx_accounts);
-		m_logging.erase(account);
+		{
+			std::lock_guard<std::mutex> lock(m_mtx_accounts);
+			m_logging.erase(account);
+		}
 		net::SendError(req.GetConnectionId(), req, 3, "Adapter unavailable");
 		return false;
 	}
@@ -259,15 +272,24 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 			OnEvent(event);
 		});
 	}
+	bool bStopping = false;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
-		if (m_bStopping)
+		bStopping = m_bStopping;
+		if (bStopping)
 		{
 			m_logging.erase(account);
-			net::SendError(req.GetConnectionId(), req, 2, "Service stopping");
-			return false;
 		}
-		m_logging[account] = counter;
+		else
+		{
+			m_logging[account] = counter;
+		}
+	}
+	if (bStopping)
+	{
+		counter->Stop();
+		net::SendError(req.GetConnectionId(), req, 2, "Service stopping");
+		return false;
 	}
 	trade::CReqParam login;
 	login.m_accountIndex = account;
@@ -331,9 +353,11 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 	});
 	if (!queued.Ok())
 	{
-		std::lock_guard<std::mutex> lock(m_mtx_accounts);
-		m_logging.erase(account);
-		m_retired.emplace_back(counter);
+		{
+			std::lock_guard<std::mutex> lock(m_mtx_accounts);
+			m_logging.erase(account);
+			m_retired.emplace_back(counter);
+		}
 		net::SendError(connection, req, static_cast<int>(queued.m_error), queued.m_strMessage);
 	}
 	return queued.Ok();
@@ -387,6 +411,7 @@ bool CTradeService::HandleOrderSubmit(const CRequest& req)
 	utility::to_number(req.GetExtraData("signal_id"), params.m_order.m_signalId);
 	return SendRequest(req, std::move(param));
 }
+
 bool CTradeService::HandleOrderCancel(const CRequest& req)
 {
 	trade::CReqParam param;
@@ -398,18 +423,21 @@ bool CTradeService::HandleOrderCancel(const CRequest& req)
 	}
 	return SendRequest(req, std::move(param));
 }
+
 bool CTradeService::HandlePositionQuery(const CRequest& req)
 {
 	trade::CReqParam param;
 	param.m_param = trade::CPositionsQueryParam{};
 	return SendRequest(req, std::move(param));
 }
+
 bool CTradeService::HandleOrderQuery(const CRequest& req)
 {
 	trade::CReqParam param;
 	param.m_param = trade::COrdersQueryParam{};
 	return SendRequest(req, std::move(param));
 }
+
 bool CTradeService::HandleDealQuery(const CRequest& req)
 {
 	trade::CReqParam param;
@@ -424,14 +452,20 @@ std::shared_ptr<trade::ITradeCounter> CTradeService::FindCounter(const CRequest&
 		net::SendError(req.GetConnectionId(), req, 1202, "broker_id/site/account required");
 		return nullptr;
 	}
-	std::lock_guard<std::mutex> lock(m_mtx_accounts);
-	const auto mIter = m_accounts.find(account);
-	if (m_accounts.end() == mIter || TradeAccountState::Connected != mIter->second.m_info.m_state)
+	std::shared_ptr<trade::ITradeCounter> counter;
+	{
+		std::lock_guard<std::mutex> lock(m_mtx_accounts);
+		const auto mIter = m_accounts.find(account);
+		if (m_accounts.end() != mIter && TradeAccountState::Connected == mIter->second.m_info.m_state)
+		{
+			counter = mIter->second.m_counter;
+		}
+	}
+	if (nullptr == counter)
 	{
 		net::SendError(req.GetConnectionId(), req, 2, "Account is not logged in");
-		return nullptr;
 	}
-	return mIter->second.m_counter;
+	return counter;
 }
 
 bool CTradeService::SendRequest(const CRequest& req, trade::CReqParam&& param)

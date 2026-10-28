@@ -4,10 +4,13 @@
 #include "../network/CTcpServer.h"
 #include "../ini/CINIHandler.h"
 #include "../network/CNetTools.h"
-#include <utility>
+#include "../common/container.h"
+#include <vector>
+
 CBrokerService::CBrokerService(net::CTcpServer* pTcpServer, CSession* pSession) : m_pTcpServer(pTcpServer), m_pSession(pSession)
 {
 }
+
 CBrokerService::~CBrokerService()
 {
 	if (m_bInitialized)
@@ -17,6 +20,7 @@ CBrokerService::~CBrokerService()
 	}
 	m_trader.Stop();
 }
+
 bool CBrokerService::Initialize()
 {
 	if (m_bInitialized)
@@ -57,6 +61,7 @@ bool CBrokerService::Initialize()
 	m_bInitialized = true;
 	return true;
 }
+
 void CBrokerService::Broadcast(const CRequest& push)
 {
 	std::vector<net::_TyConnectionId> clients;
@@ -69,6 +74,7 @@ void CBrokerService::Broadcast(const CRequest& push)
 		net::SendRequest(nId, push);
 	}
 }
+
 int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 {
 	net::_TyConnectionId nConnection = event.m_connection_id;
@@ -85,7 +91,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	const CRequest& request = *event.m_request;
 	if (_TyRequest::AUTH_LOGIN == request.GetType())
 	{
-		bool bAuthorized = request.GetExtraData("token") == m_strToken;
+		bool bAuthorized = m_strToken == request.GetExtraData("token");
 		{
 			std::lock_guard<std::mutex> lock(m_mtx_clients);
 			if (bAuthorized)
@@ -114,7 +120,7 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	bool bAuthorized = false;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_clients);
-		bAuthorized = m_clients.end() != m_clients.find(nConnection);
+		bAuthorized = container::with(m_clients, nConnection);
 	}
 	if (!bAuthorized)
 	{
@@ -134,10 +140,8 @@ int CBrokerService::OnNetEvent(const net::CNetEvent& event)
 	case _TyRequest::SUPPORTED_BROKER_QUERY:
 	case _TyRequest::TRADE_ACCOUNT_LOGIN:
 	case _TyRequest::TRADE_ACCOUNT_LIST_QUERY:
-
 	case _TyRequest::TRADE_ACCOUNT_DISCONNECT:
 	case _TyRequest::TRADE_FUNDS_QUERY:
-
 		m_trader.HandleAccountRequest(request);
 		break;
 	case _TyRequest::TRADE_ORDER_SUBMIT:

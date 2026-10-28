@@ -15,17 +15,20 @@ class CSession;
 
 class CBrokerService final
 {
-	public:
+public:
 	CBrokerService(net::CTcpServer* pTcpServer, CSession* pSession);
 	~CBrokerService();
 	CBrokerService(const CBrokerService& arg) = delete;
 	CBrokerService& operator=(const CBrokerService& arg) = delete;
+
 	bool Initialize();
 	const std::string& GetLastError() const;
 
-	private:
-	int OnNetEvent(const net::CNetEvent& event);
+private:
 	void Broadcast(const CRequest& push);
+	int OnNetEvent(const net::CNetEvent& event);
+
+private:
 	CTradeService m_trader;
 	std::string m_strToken;
 	std::string m_strLastError;
