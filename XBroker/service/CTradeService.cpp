@@ -96,7 +96,7 @@ bool CTradeService::LoadBrokers()
 	}
 	for (const auto& item : m_brokers)
 	{
-		if (!m_adapters.Contains(item.second.m_strAdapter))
+		if (!m_counterFactory.Contains(item.second.m_strAdapter))
 		{
 			m_strLastError = "Unknown broker adapter";
 			return false;
@@ -134,7 +134,7 @@ void CTradeService::Stop()
 			counter->Stop();
 		}
 	}
-	m_adapters.Stop();
+	m_counterFactory.Stop();
 }
 
 const std::string& CTradeService::GetLastError() const
@@ -247,7 +247,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		trade::protocol::WriteReply(reply, response);
 		return net::SendRequest(req.GetConnectionId(), response);
 	}
-	std::shared_ptr<trade::ITradeCounter> counter = m_adapters.Create({ account, broker->second.m_strAdapter });
+	std::shared_ptr<trade::ITradeCounter> counter = m_counterFactory.Create({ account, broker->second.m_strAdapter });
 	if (nullptr == counter)
 	{
 		{
@@ -529,7 +529,7 @@ void CTradeService::SetPushHandler(_TyPushHandler&& handler)
 	m_handler_push = std::move(handler);
 }
 
-trade::CAdapterRegistry& CTradeService::Adapters()
+trade::CCounterFactory& CTradeService::CounterFactory()
 {
-	return m_adapters;
+	return m_counterFactory;
 }

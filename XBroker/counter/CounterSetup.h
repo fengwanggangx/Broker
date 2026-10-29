@@ -3,6 +3,6 @@
 class CSession;
 namespace trade
 {
-	class CAdapterRegistry;
-	CResult InitializeAdapters(const std::string& rulesPath, CSession& session, CAdapterRegistry& adapters);
+	class CCounterFactory;
+	CResult InitializeCounters(const std::string& rulesPath, CSession& session, CCounterFactory& counterFactory);
 } // namespace trade

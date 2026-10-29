@@ -7,20 +7,21 @@
 #include <unordered_map>
 namespace trade
 {
-	struct CAdapterConfig
+	struct CCounterConfig
 	{
-		_TyAccount m_accountIndex{};
+		_TyAccount m_accountIndex{ };
 		std::string m_strAdapter;
 	};
 	// Factories create login sessions. Each adapter owns its credentials and SDK session.
-	class CAdapterRegistry final
+	class CCounterFactory final
 	{
-	public:
+public:
 		using _TyStopHandler = std::function<void()>;
-		using _TyFactory = std::function<std::shared_ptr<ITradeCounter>(const CAdapterConfig&)>;
+		using _TyFactory = std::function<std::shared_ptr<ITradeCounter>(const CCounterConfig&)>;
+
 		bool Register(const std::string& strKey, _TyFactory factory, _TyStopHandler stop = {})
 		{
-			if (strKey.empty() || nullptr == factory || !m_factories.emplace(strKey, std::move(factory)).second)
+			if (strKey.empty() || nullptr == factory || !m_factory.emplace(strKey, std::move(factory)).second)
 			{
 				return false;
 			}
@@ -30,15 +31,16 @@ namespace trade
 			}
 			return true;
 		}
+
 		bool Contains(const std::string& key) const
 		{
-			return m_factories.contains(key);
+			return m_factory.contains(key);
 		}
 
-		std::shared_ptr<ITradeCounter> Create(const CAdapterConfig& config) const
+		std::shared_ptr<ITradeCounter> Create(const CCounterConfig& config) const
 		{
-			const auto iter = m_factories.find(config.m_strAdapter);
-			return m_factories.end() == iter ? nullptr : iter->second(config);
+			const auto mIter = m_factory.find(config.m_strAdapter);
+			return m_factory.end() == mIter ? nullptr : mIter->second(config);
 		}
 
 		void Stop()
@@ -49,8 +51,8 @@ namespace trade
 			}
 		}
 
-	private:
-		std::unordered_map<std::string, _TyFactory> m_factories;
+private:
+		std::unordered_map<std::string, _TyFactory> m_factory;
 		std::vector<_TyStopHandler> m_stoppers;
 	};
 } // namespace trade

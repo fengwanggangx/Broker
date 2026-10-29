@@ -16,6 +16,7 @@ public:
 	trade::CCounterReply Execute(const trade::CReqParam& request, std::int64_t nNow);
 	trade::CResult OnDepth(trade::CDepth depth, std::int64_t nNow);
 	void OnMarketState(bool bAvailable);
+	void ForgetDepth(const std::string& security);
 	trade::CResult Advance(std::int64_t nNow);
 	trade::CAccountData Snapshot(const _TyAccount& accountIndex, std::int64_t nNow) const;
 	std::vector<trade::CCountEvent> EventsAfter(std::uint64_t nSequence) const;

@@ -1,4 +1,4 @@
-#include "../../service/CAdapterRegistry.h"
+#include "../../service/CCounterFactory.h"
 #include <deque>
 #include <iostream>
 #include <stdexcept>
@@ -89,9 +89,9 @@ private:
 };
 int main()
 {
-	trade::CAdapterRegistry registry;
+	trade::CCounterFactory registry;
 	std::shared_ptr<CDeferredBroker> adapter = std::make_shared<CDeferredBroker>();
-	if (!registry.Register("fake", [adapter](const trade::CAdapterConfig&)
+	if (!registry.Register("fake", [adapter](const trade::CCounterConfig&)
 	{
 		return adapter;
 	}) ||

@@ -79,7 +79,7 @@ public:
 		broker.m_sites.emplace("default");
 		service.m_brokers.emplace(17, std::move(broker));
 		std::vector<std::shared_ptr<CFake>> sessions;
-		service.Adapters().Register("fake", [&sessions](const trade::CAdapterConfig&)
+		service.CounterFactory().Register("fake", [&sessions](const trade::CCounterConfig&)
 		{
 			std::shared_ptr<CFake> counter = std::make_shared<CFake>();
 			sessions.emplace_back(counter);

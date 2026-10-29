@@ -39,7 +39,7 @@ bool CBrokerService::Initialize()
 		return false;
 	}
 	std::string rules = ini::CINIHandler::InstanceRef().GetValue(ini::Config::System, "Trade", "rules_path", std::string());
-	trade::CResult result = trade::InitializeAdapters(rules, *m_pSession, m_trader.Adapters());
+	trade::CResult result = trade::InitializeCounters(rules, *m_pSession, m_trader.CounterFactory());
 	if (!result.Ok())
 	{
 		m_strLastError = result.m_strMessage;

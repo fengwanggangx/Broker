@@ -882,6 +882,11 @@ trade::CResult CSimulatedCore::OnDepth(trade::CDepth depth, std::int64_t nNow)
 	}
 	return result;
 }
+void CSimulatedCore::ForgetDepth(const std::string& security)
+{
+	m_depths.erase(security);
+}
+
 void CSimulatedCore::OnMarketState(bool bAvailable)
 {
 	m_bMarketAvailable = bAvailable;
@@ -991,17 +996,14 @@ std::vector<trade::CCountEvent> CSimulatedCore::EventsAfter(std::uint64_t nSeque
 	}
 	return { m_state.m_events.begin() + static_cast<std::ptrdiff_t>(nSequence), m_state.m_events.end() };
 }
-} // namespace trade
 
-namespace trade
+std::vector<trade::CAccount> CSimulatedCore::Accounts() const
 {
-	std::vector<trade::CAccount> CSimulatedCore::Accounts() const
+	std::vector<trade::CAccount> accounts;
+	accounts.reserve(m_state.m_accounts.size());
+	for (const auto& item : m_state.m_accounts)
 	{
-		std::vector<trade::CAccount> accounts;
-		accounts.reserve(m_state.m_accounts.size());
-		for (const auto& item : m_state.m_accounts)
-		{
-			accounts.emplace_back(item.second);
-		}
-		return accounts;
+		accounts.emplace_back(item.second);
 	}
+	return accounts;
+}

@@ -1,6 +1,6 @@
 #pragma once
 #include "AccountInfo.h"
-#include "CAdapterRegistry.h"
+#include "CCounterFactory.h"
 #include "../request/request.h"
 #include <functional>
 #include <mutex>
@@ -24,7 +24,7 @@ public:
 	void Stop();
 	bool Initialize();
 
-	trade::CAdapterRegistry& Adapters();
+	trade::CCounterFactory& CounterFactory();
 	const std::string& GetLastError() const;
 	bool HasAccount(const _TyAccount& account) const;
 
@@ -63,5 +63,5 @@ private:
 	bool m_bStopping{ false };
 	std::string m_strLastError;
 	_TyPushHandler m_handler_push;
-	trade::CAdapterRegistry m_adapters;
+	trade::CCounterFactory m_counterFactory;
 };

@@ -165,7 +165,7 @@
     <ClInclude Include="service\CTradeService.h">
       <Filter>service</Filter>
     </ClInclude>
-    <ClInclude Include="service\CAdapterRegistry.h">
+    <ClInclude Include="service\CCounterFactory.h">
       <Filter>service</Filter>
     </ClInclude>
     <ClInclude Include="system\CBrokerService.h">
@@ -267,6 +267,12 @@
       <Filter>request</Filter>
     </ClCompile>
     <ClCompile Include="counter\CSimulatedCounter.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\CSimulatedCounterStorage.cpp">
+      <Filter>counter</Filter>
+    </ClCompile>
+    <ClCompile Include="counter\CSimulatedCounterMarket.cpp">
       <Filter>counter</Filter>
     </ClCompile>
     <ClCompile Include="counter\CounterSetup.cpp">

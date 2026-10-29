@@ -221,7 +221,7 @@ namespace
 			{
 				promise->set_value(reply);
 			}).Ok(),
-				"request receipt");
+				  "request receipt");
 			pump();
 			Check(std::future_status::ready == future.wait_for(std::chrono::seconds(3)), "async completion");
 			return future.get();
@@ -274,21 +274,158 @@ namespace
 		Check(counter.Execute(cancel, 1200).m_result.Ok(), "terminal cancel idempotent");
 		counter.Stop();
 		std::shared_ptr<CMemory> asyncMemory = std::make_shared<CMemory>();
-		CSimulatedCounter gateway(std::make_unique<CSimulatedCore>(std::make_unique<CStore>(asyncMemory)), []()
+		CSimulatedCounter& gateway = CSimulatedCounter::InstanceRef();
+		Check(&gateway == &CSimulatedCounter::InstanceRef(), "single counter instance");
+		asyncMemory->m_bFail = true;
+		Check(!gateway.Start(std::make_unique<CStore>(asyncMemory), []()
 		{
 			return 1100;
-		});
-		Check(gateway.Start({ { TestAccount(1), 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } }).Ok(), "gateway start");
+		}, {}, {}, {})
+					  .Ok() &&
+				  !asyncMemory->m_bLease,
+			  "failed start releases singleton storage lease");
+		asyncMemory->m_bFail = false;
+		Check(gateway.Start(std::make_unique<CStore>(asyncMemory), []()
+		{
+			return 1100;
+		}, { { TestAccount(1), 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
+				  .Ok(),
+			  "gateway start");
+		Check(!gateway.Start(std::make_unique<CStore>(std::make_shared<CMemory>()), []()
+		{
+			return 1100;
+		}, {}, {}, {})
+				   .Ok(),
+			  "duplicate singleton start rejected");
 		gateway.OnMarketState(true);
 		Contract(gateway, []()
 		{
 		});
+		Check(!asyncMemory->m_bLease && gateway.Snapshot(TestAccount(1)).m_orders.empty(), "stop releases lease and clears singleton snapshots");
+		std::shared_ptr<CMemory> restartMemory = std::make_shared<CMemory>();
+		Check(gateway.Start(std::make_unique<CStore>(restartMemory), []()
+		{
+			return 1100;
+		}, { { TestAccount(1), 2000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
+				  .Ok(),
+			  "singleton restart");
+		Check(2000000 == gateway.Snapshot(TestAccount(1)).m_account.m_nBalance && gateway.Snapshot(TestAccount(1)).m_orders.empty(), "restart uses fresh store");
+		gateway.Stop();
+		gateway.Stop();
 		CDeferredBroker broker;
 		Contract(broker, [&broker]()
 		{
 			broker.Pump();
 		});
 	}
+	void DemandSubscriptions()
+	{
+		CSimulatedCounter& gateway = CSimulatedCounter::InstanceRef();
+		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
+		std::atomic_int64_t now{ 1100 };
+		std::mutex subscriptionMutex;
+		std::condition_variable subscriptionCondition;
+		std::vector<std::pair<std::string, bool>> subscriptions;
+		std::atomic_int subscriptionFailures{ 1 };
+		// Stop the singleton before callback captures leave scope, including failed checks.
+		struct CCounterStopGuard
+		{
+			CSimulatedCounter& m_counter;
+			~CCounterStopGuard()
+			{
+				m_counter.Stop();
+			}
+		} cleanup{ gateway };
+		Check(gateway.Start(std::make_unique<CStore>(memory), [&now]()
+		{
+			return now.load();
+		}, { { TestAccount(1), 1000000, 0, false, true }, { TestAccount(2), 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
+				  .Ok(),
+			  "demand gateway start");
+		auto handler = [&](const std::string& security, bool subscribe)
+		{
+			if (subscribe && 0 < subscriptionFailures.load())
+			{
+				--subscriptionFailures;
+				return false;
+			}
+			std::lock_guard<std::mutex> lock(subscriptionMutex);
+			subscriptions.emplace_back(security, subscribe);
+			subscriptionCondition.notify_all();
+			return true;
+		};
+		gateway.SetDepthSubscriptionHandler(handler);
+		gateway.OnMarketState(true);
+		auto send = [&gateway](CReqParam request)
+		{
+			std::shared_ptr<std::promise<CCounterReply>> promise = std::make_shared<std::promise<CCounterReply>>();
+			std::future<CCounterReply> future = promise->get_future();
+			Check(gateway.SendRequest(std::move(request), [promise](const CCounterReply& reply)
+			{
+				promise->set_value(reply);
+			}).Ok(),
+				  "demand request queued");
+			Check(std::future_status::ready == future.wait_for(std::chrono::seconds(3)), "demand reply received");
+			return future.get();
+		};
+		auto wait = [&](std::size_t count, bool subscribe)
+		{
+			std::unique_lock<std::mutex> lock(subscriptionMutex);
+			Check(subscriptionCondition.wait_for(lock, std::chrono::seconds(3), [&]()
+			{
+				return subscriptions.size() >= count;
+			}),
+				  "subscription transition received");
+			Check(count == subscriptions.size() && "600000.SSE" == subscriptions.back().first && subscribe == subscriptions.back().second, "expected demand transition");
+		};
+		Check(send(Request(Operation::Connect)).m_result.Ok(), "first account connected");
+		Check(send(Request(Operation::Connect, TestAccount(2))).m_result.Ok(), "second account connected");
+		{
+			std::lock_guard<std::mutex> lock(subscriptionMutex);
+			Check(subscriptions.empty(), "rules and connections do not subscribe");
+		}
+		Check(!send(Request(Operation::Submit, TestAccount(1), 1, 1)).m_result.Ok(), "rejected order does not subscribe");
+		CCounterReply first = send(Request(Operation::Submit, TestAccount(1), 2));
+		Check(first.m_result.Ok(), "first order waits for initial depth");
+		wait(1, true);
+		CCounterReply second = send(Request(Operation::Submit, TestAccount(2), 3));
+		Check(second.m_result.Ok(), "second account shares subscription");
+		CReqParam cancel = Request(Operation::Cancel);
+		std::get<CCancelParam>(cancel.m_param).m_orderId = std::get<COperationReceipt>(first.m_data).m_orderId;
+		Check(send(cancel).m_result.Ok(), "cancel first order");
+		gateway.OnMarketState(false);
+		gateway.OnMarketState(true);
+		wait(2, true);
+		cancel.m_accountIndex = TestAccount(2);
+		std::get<CCancelParam>(cancel.m_param).m_orderId = std::get<COperationReceipt>(second.m_data).m_orderId;
+		Check(send(cancel).m_result.Ok(), "cancel last order");
+		wait(3, false);
+		Check(send(Request(Operation::Submit, TestAccount(1), 4)).m_result.Ok(), "new order resubscribes");
+		wait(4, true);
+		gateway.OnDepth(CDepth{ "600000.SSE", 1, 1100, 2, {}, { { 1000, 50 } } });
+		Check(send(Request(Operation::Funds)).m_result.Ok(), "partial fill barrier");
+		Check(Status::PartiallyFilled == gateway.Snapshot(TestAccount(1)).m_orders.back().m_status, "partial fill retains demand");
+		gateway.OnDepth(CDepth{ "600000.SSE", 2, 1100, 2, {}, { { 1000, 500 } } });
+		wait(5, false);
+		Check(send(Request(Operation::Submit, TestAccount(1), 5)).m_result.Ok(), "next order accepted");
+		Check(Status::Accepted == gateway.Snapshot(TestAccount(1)).m_orders.back().m_status, "new demand cannot reuse unsubscribed cached depth");
+		wait(6, true);
+		gateway.Stop();
+		wait(7, false);
+		Check(gateway.Start(std::make_unique<CStore>(memory), [&now]()
+		{
+			return now.load();
+		}, {}, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
+				  .Ok(),
+			  "recover pending order");
+		gateway.SetDepthSubscriptionHandler(handler);
+		gateway.OnMarketState(true);
+		wait(8, true);
+		now = 4000;
+		wait(9, false);
+		gateway.Stop();
+	}
+
 	void IncrementalState()
 	{
 		CState state;
@@ -434,6 +571,7 @@ int main()
 		IncrementalState();
 		Run();
 		Boundaries();
+		DemandSubscriptions();
 		std::cout << "counter tests passed\n";
 		return 0;
 	}
