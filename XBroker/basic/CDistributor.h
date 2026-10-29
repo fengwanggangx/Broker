@@ -66,13 +66,13 @@ public:
 	void RegisterHandler(_TyHandler&& fun)
 	{
 		std::unique_lock<std::shared_mutex> lock(m_mtx_handler);
-		m_handler.emplace_back(std::forward<_TyHandler>(fun));
+		m_handler_request.emplace_back(std::forward<_TyHandler>(fun));
 	}
 
 	void ClearHandlers()
 	{
 		std::unique_lock<std::shared_mutex> lock(m_mtx_handler);
-		m_handler.clear();
+		m_handler_request.clear();
 	}
 
 	void StopAndWait()
@@ -119,7 +119,7 @@ private:
 		if constexpr (IsContainer<_Ty>)
 		{
 			std::shared_lock<std::shared_mutex> lock(m_mtx_handler);
-			int nOK = ((1 << m_handler.size()) - 1);
+			int nOK = ((1 << m_handler_request.size()) - 1);
 
 			std::size_t sz = data.size();
 			ret = ((1 << sz) - 1);
@@ -141,11 +141,11 @@ private:
 
 	int ExecuteA(const _TyData& data)
 	{
-		std::size_t sz = m_handler.size();
+		std::size_t sz = m_handler_request.size();
 		int ret = ((1 << sz) - 1);
 		for (std::size_t i = 0; i < sz; ++i)
 		{
-			const auto& fun = m_handler.at(i);
+			const auto& fun = m_handler_request.at(i);
 			if ((nullptr == fun) || !fun(data))
 			{
 				ret &= ~(1 << i);
@@ -160,7 +160,7 @@ private:
 	_TyDataContainer m_cache;
 
 	std::shared_mutex m_mtx_handler;
-	std::vector<_TyHandler> m_handler;
+	std::vector<_TyHandler> m_handler_request;
 
 	std::mutex m_mtx_tasks;
 	std::vector<std::future<int>> m_tasks;

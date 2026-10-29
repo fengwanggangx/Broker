@@ -19,14 +19,14 @@ namespace trade
 		struct CSessionEvents
 		{
 			std::mutex m_mtx_handler;
-			ITradeCounter::EventHandler m_handler;
+			ITradeCounter::EventHandler m_handler_request;
 		};
 		class CSimulatedSession final : public ITradeCounter
 		{
 		public:
-			CSimulatedSession(std::shared_ptr<CSimulatedCounter> counter, std::shared_ptr<CSessionEvents> events, const _TyAccountIndex& account) : m_counter(std::move(counter)), m_events(std::move(events)), m_account(account)
-			{
-			}
+		CSimulatedSession(std::shared_ptr<CSimulatedCounter> counter, std::shared_ptr<CSessionEvents> events, const _TyAccount& account) : m_counter(std::move(counter)), m_events(std::move(events)), m_account(account)
+		{
+		}
 			CResult SendRequest(CReqParam request, ReplyHandler handler) override
 			{
 				if (m_account != request.m_accountIndex)
@@ -35,14 +35,14 @@ namespace trade
 				}
 				return m_counter->SendRequest(std::move(request), std::move(handler));
 			}
-			CAccountData Snapshot(const _TyAccountIndex& account) const override
+			CAccountData Snapshot(const _TyAccount& account) const override
 			{
 				return m_account == account ? m_counter->Snapshot(account) : CAccountData{};
 			}
 			void SetEventHandler(EventHandler handler) override
 			{
 				std::lock_guard<std::mutex> lock(m_events->m_mtx_handler);
-				m_events->m_handler = std::move(handler);
+				m_events->m_handler_request = std::move(handler);
 			}
 			void Stop() override
 			{
@@ -52,12 +52,12 @@ namespace trade
 		private:
 			std::shared_ptr<CSimulatedCounter> m_counter;
 			std::shared_ptr<CSessionEvents> m_events;
-			_TyAccountIndex m_account;
+			_TyAccount m_account;
 		};
 		struct CSimulatedSessions
 		{
 			std::mutex m_mtx_sessions;
-			std::map<_TyAccountIndex, std::weak_ptr<CSessionEvents>> m_sessions;
+			std::map<_TyAccount, std::weak_ptr<CSessionEvents>> m_sessions;
 		};
 
 		std::int64_t Now()
@@ -137,13 +137,13 @@ namespace trade
 			return result;
 		}
 		std::unique_ptr<ICounterStore> store = std::make_unique<CStorager>(utility::MakeSaltHex());
-		std::shared_ptr<CSimulatedCounter> gateway = std::make_shared<CSimulatedCounter>(std::make_unique<CSimulatedCore>(std::move(store)), Now);
-		result = gateway->Start({}, rules, calendar);
+		std::shared_ptr<CSimulatedCounter> pSCounter = std::make_shared<CSimulatedCounter>(std::make_unique<CSimulatedCore>(std::move(store)), Now);
+		result = pSCounter->Start({}, rules, calendar);
 		if (!result.Ok())
 		{
 			return result;
 		}
-		std::weak_ptr<CSimulatedCounter> weak = gateway;
+		std::weak_ptr<CSimulatedCounter> weak = pSCounter;
 		session.RegisterHandler([weak](const ::CRequest& request)
 		{
 			std::shared_ptr<CSimulatedCounter> target = weak.lock();
@@ -213,9 +213,9 @@ namespace trade
 		};
 		session.RegisterStateHandler(subscribe);
 		subscribe(session.IsAuthenticated() ? SessionState::Ready : SessionState::Disconnected, "");
-		gateway->OnMarketState(session.IsAuthenticated());
+		pSCounter->OnMarketState(session.IsAuthenticated());
 		std::shared_ptr<CSimulatedSessions> sessions = std::make_shared<CSimulatedSessions>();
-		gateway->SetEventHandler([sessions](const CCountEvent& event)
+		pSCounter->SetEventHandler([sessions](const CCountEvent& event)
 		{
 			std::shared_ptr<CSessionEvents> events;
 			{
@@ -233,28 +233,28 @@ namespace trade
 			ITradeCounter::EventHandler handler;
 			{
 				std::lock_guard<std::mutex> lock(events->m_mtx_handler);
-				handler = events->m_handler;
+				handler = events->m_handler_request;
 			}
 			if (nullptr != handler)
 			{
 				handler(event);
 			}
 		});
-		if (!adapters.Register("simulated", [gateway, sessions](const CAdapterConfig& config) -> std::shared_ptr<ITradeCounter>
+		if (!adapters.Register("simulated", [pSCounter, sessions](const CAdapterConfig& config) -> std::shared_ptr<ITradeCounter>
 		{
 			std::shared_ptr<CSessionEvents> events = std::make_shared<CSessionEvents>();
-			std::shared_ptr<ITradeCounter> counter = std::make_shared<CSimulatedSession>(gateway, events, config.m_accountIndex);
+			std::shared_ptr<ITradeCounter> counter = std::make_shared<CSimulatedSession>(pSCounter, events, config.m_accountIndex);
 			{
 				std::lock_guard<std::mutex> lock(sessions->m_mtx_sessions);
 				sessions->m_sessions.insert_or_assign(config.m_accountIndex, events);
 			}
 			return counter;
-		}, [gateway]()
+		}, [pSCounter]()
 		{
-			gateway->Stop();
+			pSCounter->Stop();
 		}))
 		{
-			gateway->Stop();
+			pSCounter->Stop();
 			return { Error::Rejected, "Duplicate simulated adapter registration" };
 		}
 		return {};

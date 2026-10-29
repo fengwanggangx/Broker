@@ -112,7 +112,7 @@ void CSimulatedCounter::Refresh()
 			item.second.m_bReady = m_bReady;
 			item.second.m_version = m_version;
 		}
-		handler = m_handler;
+		handler = m_handler_request;
 	}
 	for (const auto& event : events)
 	{
@@ -188,9 +188,9 @@ void CSimulatedCounter::Run()
 void CSimulatedCounter::SetEventHandler(EventHandler handler)
 {
 	std::lock_guard<std::mutex> lock(m_mtx_state);
-	m_handler = std::move(handler);
+	m_handler_request = std::move(handler);
 }
-trade::CAccountData CSimulatedCounter::Snapshot(const _TyAccountIndex& accountIndex) const
+trade::CAccountData CSimulatedCounter::Snapshot(const _TyAccount& accountIndex) const
 {
 	std::lock_guard<std::mutex> lock(m_mtx_state);
 	auto iter = m_snapshots.find(accountIndex);

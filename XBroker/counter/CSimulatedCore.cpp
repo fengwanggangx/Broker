@@ -139,9 +139,9 @@ bool CSimulatedCore::Ready() const
 }
 trade::CResult CSimulatedCore::Validate(const trade::CState& state) const
 {
-	std::map<_TyAccountIndex, std::int64_t> frozen;
-	std::map<std::pair<_TyAccountIndex, std::string>, std::int64_t> shares;
-	std::set<std::pair<_TyAccountIndex, std::uint64_t>> clients;
+	std::map<_TyAccount, std::int64_t> frozen;
+	std::map<std::pair<_TyAccount, std::string>, std::int64_t> shares;
+	std::set<std::pair<_TyAccount, std::uint64_t>> clients;
 	std::map<std::uint64_t, std::int64_t> filled, turnover, fees;
 	for (const auto& item : state.m_trades)
 	{
@@ -256,7 +256,7 @@ trade::CResult CSimulatedCore::Commit(trade::CStateEdit& edit)
 	}
 	return result;
 }
-trade::CResult CSimulatedCore::AddAccount(const _TyAccountIndex& accountIndex, std::int64_t nInitialBalance)
+trade::CResult CSimulatedCore::AddAccount(const _TyAccount& accountIndex, std::int64_t nInitialBalance)
 {
 	if (!m_bReady)
 	{
@@ -508,7 +508,7 @@ trade::CResult CSimulatedCore::Fill(trade::CStateEdit& edit, trade::COrder& orde
 	std::int64_t nFee = nTotalFee - order.m_nFee;
 	edit.Save(&trade::CState::m_accounts, order.m_accountIndex);
 	trade::CAccount& account = state.m_accounts.at(order.m_accountIndex);
-	std::pair<_TyAccountIndex, std::string> key = std::make_pair(order.m_accountIndex, order.m_strSecurity);
+	std::pair<_TyAccount, std::string> key = std::make_pair(order.m_accountIndex, order.m_strSecurity);
 	edit.Save(&trade::CState::m_orders, order.m_orderId);
 	edit.Save(&trade::CState::m_positions, key);
 	trade::CPosition& position = state.m_positions[key];
@@ -712,7 +712,7 @@ trade::CCounterReply CSimulatedCore::Execute(const trade::CReqParam& request, st
 	std::uint64_t nOrderId = 0;
 	if (!IsAccountValid(request.m_accountIndex))
 	{
-		reply.m_result = { trade::Error::NotFound, "broker_id/site/account required" };
+		reply.m_result = { trade::Error::NotFound, "broker_id/account required" };
 		return reply;
 	}
 	reply.m_result = Advance(nNow);
@@ -890,7 +890,7 @@ void CSimulatedCore::OnMarketState(bool bAvailable)
 		m_depths.clear();
 	}
 }
-trade::CAccountData CSimulatedCore::Snapshot(const _TyAccountIndex& accountIndex, std::int64_t nNow) const
+trade::CAccountData CSimulatedCore::Snapshot(const _TyAccount& accountIndex, std::int64_t nNow) const
 {
 	trade::CAccountData data;
 	data.m_account.m_accountIndex = accountIndex;

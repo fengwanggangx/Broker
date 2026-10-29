@@ -36,7 +36,7 @@ namespace
 
 CTradeService::CTradeService()
 {
-	m_handler = {
+	m_handler_request = {
 		{ _TyRequest::SUPPORTED_BROKER_QUERY, std::bind_front(&CTradeService::HandleQueryBrokerSupported, this) },
 		{ _TyRequest::TRADE_ACCOUNT_LOGIN, std::bind_front(&CTradeService::HandleAccountLogin, this) },
 		{ _TyRequest::TRADE_ACCOUNT_LIST_QUERY, std::bind_front(&CTradeService::HandleAccountListQuery, this) },
@@ -142,7 +142,7 @@ const std::string& CTradeService::GetLastError() const
 	return m_strLastError;
 }
 
-bool CTradeService::HasAccount(const _TyAccountIndex& account) const
+bool CTradeService::HasAccount(const _TyAccount& account) const
 {
 	std::lock_guard<std::mutex> lock(m_mtx_accounts);
 	return container::with(m_accounts, account);
@@ -169,8 +169,8 @@ bool CTradeService::DispatchRequest(const CRequest& req)
 	{
 		counter->Stop();
 	}
-	const auto mIter = m_handler.find(req.GetType());
-	if (m_handler.end() == mIter)
+	const auto mIter = m_handler_request.find(req.GetType());
+	if (m_handler_request.end() == mIter)
 	{
 		net::SendError(req.GetConnectionId(), req, 3, "Unsupported trading request");
 		return false;
@@ -200,14 +200,14 @@ bool CTradeService::HandleQueryBrokerSupported(const CRequest& req)
 
 bool CTradeService::HandleAccountLogin(const CRequest& req)
 {
-	_TyAccountIndex account;
+	_TyAccount account;
 	if (!ReadAccountIdentity(req, account) || req.GetExtraData("password").empty())
 	{
 		net::SendError(req.GetConnectionId(), req, 1202, "broker_id/site/account/password required");
 		return false;
 	}
-	const auto broker = m_brokers.find(std::get<0>(account));
-	if (m_brokers.end() == broker || !container::with(broker->second.m_sites, std::get<1>(account)))
+	const auto broker = m_brokers.find(account.first);
+	if (m_brokers.end() == broker || !container::with(broker->second.m_sites, req.GetExtraData("site")))
 	{
 		net::SendError(req.GetConnectionId(), req, 3, "Unknown broker or site");
 		return false;
@@ -294,11 +294,11 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 	trade::CReqParam login;
 	login.m_accountIndex = account;
 	login.m_requestId = SourceId(req);
-	login.m_param = trade::CLoginParam{ req.GetExtraData("password") };
+	login.m_param = trade::CLoginParam{ req.GetExtraData("password"), req.GetExtraData("site") };
 	net::_TyConnectionId connection = req.GetConnectionId();
 	std::uint64_t requestId = req.GetId();
 	std::string brokerName = broker->second.m_strName;
-	trade::CResult queued = counter->SendRequest(std::move(login), [this, account, connection, requestId, brokerName](const trade::CCounterReply& reply)
+	trade::CResult queued = counter->SendRequest(std::move(login), [this, account, connection, requestId, brokerName, site = req.GetExtraData("site")](const trade::CCounterReply& reply)
 	{
 		CRequest response;
 		response.SetId(requestId);
@@ -310,6 +310,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		}
 		CTradeAccountInfo info = AccountInfo(account);
 		info.m_strBrokerName = brokerName;
+		info.m_strSite = site;
 		info.m_strName = info.m_strAccount;
 		info.m_state = TradeAccountState::Connected;
 		{
@@ -445,11 +446,11 @@ bool CTradeService::HandleDealQuery(const CRequest& req)
 	return SendRequest(req, std::move(param));
 }
 
-std::shared_ptr<trade::ITradeCounter> CTradeService::FindCounter(const CRequest& req, _TyAccountIndex& account) const
+std::shared_ptr<trade::ITradeCounter> CTradeService::FindCounter(const CRequest& req, _TyAccount& account) const
 {
 	if (!ReadAccountIdentity(req, account))
 	{
-		net::SendError(req.GetConnectionId(), req, 1202, "broker_id/site/account required");
+		net::SendError(req.GetConnectionId(), req, 1202, "broker_id/account required");
 		return nullptr;
 	}
 	std::shared_ptr<trade::ITradeCounter> counter;
@@ -514,7 +515,7 @@ void CTradeService::OnEvent(const trade::CCountEvent& event)
 			account->second.m_info.m_state = event.m_account.m_bConnected ? TradeAccountState::Connected : TradeAccountState::Disconnected;
 		}
 		info = account->second.m_info;
-		handler = m_pushHandler;
+		handler = m_handler_push;
 	}
 	if (nullptr != handler)
 	{
@@ -525,7 +526,7 @@ void CTradeService::OnEvent(const trade::CCountEvent& event)
 void CTradeService::SetPushHandler(_TyPushHandler&& handler)
 {
 	std::lock_guard<std::mutex> lock(m_mtx_accounts);
-	m_pushHandler = std::move(handler);
+	m_handler_push = std::move(handler);
 }
 
 trade::CAdapterRegistry& CTradeService::Adapters()

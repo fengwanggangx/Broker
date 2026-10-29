@@ -73,9 +73,9 @@ namespace
 		}
 	}
 } // namespace
-static _TyAccountIndex TestAccount(std::uint64_t number)
+static _TyAccount TestAccount(std::uint64_t number)
 {
-	return 0 == number ? _TyAccountIndex{} : _TyAccountIndex{ 1, "default", std::to_string(number) };
+	return 0 == number ? _TyAccount{} : _TyAccount{ 1, std::to_string(number) };
 }
 
 int main()

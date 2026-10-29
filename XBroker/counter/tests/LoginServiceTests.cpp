@@ -19,7 +19,7 @@ class CLoginServiceTests
 			m_events = std::move(handler);
 		}
 
-		trade::CAccountData Snapshot(const _TyAccountIndex&) const override
+		trade::CAccountData Snapshot(const _TyAccount&) const override
 		{
 			return {};
 		}
@@ -39,7 +39,7 @@ class CLoginServiceTests
 			work.second(reply);
 		}
 
-		void Emit(const _TyAccountIndex& account, bool connected)
+		void Emit(const _TyAccount& account, bool connected)
 		{
 			trade::CCountEvent event;
 			event.m_accountIndex = account;
@@ -85,11 +85,12 @@ public:
 			sessions.emplace_back(counter);
 			return counter;
 		});
-		_TyAccountIndex account{ 17, "default", "000123" };
+		_TyAccount account{ 17, "000123" };
 		CRequest login;
 		login.SetType(_TyRequest::TRADE_ACCOUNT_LOGIN);
 		WriteAccountIdentity(account, login);
 		login.SetExtraData("password", "secret");
+		login.SetExtraData("site", "default");
 		Check(service.HandleAccountRequest(login), "first login queued");
 		Check(!service.HandleAccountRequest(login), "concurrent duplicate rejected");
 		Check(service.m_accounts.empty() && 1 == sessions.size(), "pending login not published");

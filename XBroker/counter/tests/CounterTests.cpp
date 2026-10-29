@@ -8,9 +8,9 @@
 #include <limits>
 using namespace trade;
 
-static _TyAccountIndex TestAccount(std::uint64_t number)
+static _TyAccount TestAccount(std::uint64_t number)
 {
-	return 0 == number ? _TyAccountIndex{} : _TyAccountIndex{ 1, "default", std::to_string(number) };
+	return 0 == number ? _TyAccount{} : _TyAccount{ 1, std::to_string(number) };
 }
 
 static trade::_TyRequestParam MakeParams(trade::Operation operation)
@@ -103,7 +103,7 @@ namespace
 		rule.m_nMinimumFee = 5;
 		return rule;
 	}
-	CReqParam Request(Operation operation, _TyAccountIndex nAccount = TestAccount(1), std::uint64_t nClient = 1, std::int64_t nQuantity = 100, std::int64_t nPrice = 1000)
+	CReqParam Request(Operation operation, _TyAccount nAccount = TestAccount(1), std::uint64_t nClient = 1, std::int64_t nQuantity = 100, std::int64_t nPrice = 1000)
 	{
 		CReqParam request;
 		request.m_param = MakeParams(operation);
@@ -118,7 +118,7 @@ namespace
 		}
 		return request;
 	}
-	void Connect(CSimulatedCore& counter, const _TyAccountIndex& nId, std::int64_t nNow)
+	void Connect(CSimulatedCore& counter, const _TyAccount& nId, std::int64_t nNow)
 	{
 		Check(counter.Execute(Request(Operation::Connect, nId), nNow).m_result.Ok(), "connect");
 	}
@@ -178,7 +178,7 @@ namespace
 		{
 			m_handler = std::move(handler);
 		}
-		CAccountData Snapshot(const _TyAccountIndex&) const override
+		CAccountData Snapshot(const _TyAccount&) const override
 		{
 			CAccountData snapshot;
 			snapshot.m_bReady = true;
@@ -397,7 +397,7 @@ namespace
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		CSimulatedCore counter(std::make_unique<CStore>(memory));
 		Check(counter.Start(0).Ok(), "identity core start");
-		std::vector<_TyAccountIndex> identities{ { 1, "default", "000123" }, { 2, "default", "000123" }, { 1, "other", "000123" }, { 1, "default", "123" } };
+		std::vector<_TyAccount> identities{ { 1, "000123" }, { 2, "000123" }, { 1, "123" } };
 		std::int64_t balance = 10000;
 		for (const auto& account : identities)
 		{
@@ -407,11 +407,11 @@ namespace
 		}
 		std::string encoded = EncodeState(memory->m_state);
 		CState restored;
-		Check(DecodeState(encoded, restored) && 4 == restored.m_accounts.size(), "all identities survive persistence");
-		Check(10000 == restored.m_accounts.at(identities[0]).m_nBalance && 40000 == restored.m_accounts.at(identities[3]).m_nBalance, "leading zero account remains distinct");
-		_TyAccountIndex special{ 9, "site / \"", "00: account \"" };
-		_TyAccountIndex parsed;
-		Check(DecodeAccount(EncodeAccount(special), parsed) && special == parsed, "tuple encoding preserves delimiters");
+		Check(DecodeState(encoded, restored) && 3 == restored.m_accounts.size(), "all identities survive persistence");
+		Check(10000 == restored.m_accounts.at(identities[0]).m_nBalance && 30000 == restored.m_accounts.at(identities[2]).m_nBalance, "leading zero account remains distinct");
+		_TyAccount special{ 9, "00: account \"" };
+		_TyAccount parsed;
+		Check(DecodeAccount(EncodeAccount(special), parsed) && special == parsed, "pair encoding preserves delimiters");
 		Check(!DecodeAccount(EncodeAccount(special) + " trailing", parsed), "trailing identity data rejected");
 		counter.Stop();
 	}

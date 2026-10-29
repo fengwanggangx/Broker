@@ -143,6 +143,7 @@ namespace trade::protocol
 	{
 		request::TradeAccountRecord payload;
 		SetAccountIdentity(AccountIndex(info), payload);
+		payload.set_site(info.m_strSite);
 		payload.set_broker_name(info.m_strBrokerName);
 		payload.set_name(info.m_strName);
 		payload.set_state(static_cast<request::TradingAccountState>(info.m_state));
@@ -156,9 +157,8 @@ namespace trade::protocol
 		push.SetId(0);
 		push.SetExtraData("sequence", std::to_string(event.m_sequence));
 		push.SetExtraData("request_id", std::to_string(event.m_requestId));
-		push.SetExtraData("broker_id", std::to_string(std::get<0>(event.m_accountIndex)));
-		push.SetExtraData("site", std::get<1>(event.m_accountIndex));
-		push.SetExtraData("account", std::get<2>(event.m_accountIndex));
+		push.SetExtraData("broker_id", std::to_string(event.m_accountIndex.first));
+		push.SetExtraData("account", event.m_accountIndex.second);
 		switch (event.m_kind)
 		{
 		case trade::EventTy::Session:

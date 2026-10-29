@@ -3,9 +3,9 @@
 #include <iostream>
 #include <stdexcept>
 
-static _TyAccountIndex TestAccount(std::uint64_t number)
+static _TyAccount TestAccount(std::uint64_t number)
 {
-	return 0 == number ? _TyAccountIndex{} : _TyAccountIndex{ 1, "default", std::to_string(number) };
+	return 0 == number ? _TyAccount{} : _TyAccount{ 1, std::to_string(number) };
 }
 
 static trade::_TyRequestParam MakeParams(trade::Operation operation)
@@ -74,7 +74,7 @@ public:
 	{
 		m_handler = std::move(handler);
 	}
-	trade::CAccountData Snapshot(const _TyAccountIndex&) const override
+	trade::CAccountData Snapshot(const _TyAccount&) const override
 	{
 		return {};
 	}

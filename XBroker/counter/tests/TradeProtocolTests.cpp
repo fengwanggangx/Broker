@@ -2,7 +2,7 @@
 #include <iostream>
 int main()
 {
-	_TyAccountIndex account{ 1, "default", "000123" };
+	_TyAccount account{ 1, "000123" };
 	CTradeAccountInfo info = AccountInfo(account);
 	info.m_strBrokerName = "券商";
 	if (account != AccountIndex(trade::protocol::AccountPayload(info)))

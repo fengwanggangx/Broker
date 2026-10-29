@@ -9,7 +9,7 @@ namespace trade
 {
 	struct CAdapterConfig
 	{
-		_TyAccountIndex m_accountIndex{};
+		_TyAccount m_accountIndex{};
 		std::string m_strAdapter;
 	};
 	// Factories create login sessions. Each adapter owns its credentials and SDK session.

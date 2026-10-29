@@ -15,7 +15,7 @@ public:
 	trade::CResult Start(const std::vector<trade::CAccount>& accounts, const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar);
 	trade::CResult SendRequest(trade::CReqParam request, ReplyHandler handler) override;
 	void SetEventHandler(EventHandler handler) override;
-	trade::CAccountData Snapshot(const _TyAccountIndex& accountIndex) const override;
+	trade::CAccountData Snapshot(const _TyAccount& accountIndex) const override;
 	void OnDepth(trade::CDepth depth) override;
 	void OnMarketState(bool bAvailable) override;
 	void Stop() override;
@@ -28,10 +28,10 @@ private:
 	mutable std::mutex m_mtx_state;
 	std::condition_variable m_condition;
 	std::deque<std::function<void()>> m_work;
-	std::map<_TyAccountIndex, trade::CAccountData> m_snapshots;
+	std::map<_TyAccount, trade::CAccountData> m_snapshots;
 	std::uint64_t m_version{ 0 };
 	bool m_bReady{ false };
-	EventHandler m_handler;
+	EventHandler m_handler_request;
 	std::uint64_t m_delivered{ 0 };
 	std::atomic_bool m_bInputAvailable{ false };
 	std::atomic_uint64_t m_epoch{ 0 };
