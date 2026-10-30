@@ -99,15 +99,15 @@ void CBrokerService::Stop()
 		m_pTcpServer->Drain();
 		m_pTcpServer->ClearHandlers();
 	}
-	if (nullptr != m_simulatedDispatcher || nullptr != m_zhongTaiDispatcher)
+	if (nullptr != m_dispatcher_simulated || nullptr != m_dispatcher_zhongtai)
 	{
 		// Quiesce HQMarket callbacks before stopping or destroying their targets.
 		m_pSession->Stop();
 		m_pSession->ClearHandlers();
 	}
 	m_trader.Stop();
-	m_zhongTaiDispatcher.reset();
-	m_simulatedDispatcher.reset();
+	m_dispatcher_zhongtai.reset();
+	m_dispatcher_simulated.reset();
 	m_bInitialized = false;
 }
 
@@ -139,14 +139,8 @@ bool CBrokerService::Initialize()
 		m_strLastError = m_trader.GetLastError();
 		return false;
 	}
-	m_trader.SetPushHandler([this](const CRequest& push)
-	{
-		Broadcast(push);
-	});
-	m_pTcpServer->RegisterHandler([this](const net::CNetEvent& event)
-	{
-		return OnNetEvent(event);
-	});
+	m_trader.SetPushHandler(std::bind_front(&CBrokerService::Broadcast, this));
+	m_pTcpServer->RegisterHandler(std::bind_front(&CBrokerService::OnNetEvent, this));
 	m_bInitialized = true;
 	return true;
 }
@@ -167,23 +161,23 @@ trade::CResult CBrokerService::InitializeCounters()
 	{
 		return { trade::Error::Rejected, "Duplicate simulated counter registration" };
 	}
-	m_simulatedDispatcher = std::make_unique<CSimulatedDispatcher>();
-	CSimulatedDispatcher* counter = m_simulatedDispatcher.get();
-	result = counter->Start({}, rules, calendar);
+	m_dispatcher_simulated = std::make_unique<CSimulatedDispatcher>();
+	CSimulatedDispatcher* dispatcher = m_dispatcher_simulated.get();
+	result = dispatcher->Start({}, rules, calendar);
 	if (!result.Ok())
 	{
 		return result;
 	}
-	session.RegisterHandler(std::bind_front(&CSimulatedDispatcher::OnMarketResponse, counter));
-	counter->SetDepthSubscriptionHandler(std::bind_front(&CSimulatedDispatcher::ChangeDepthSubscription, counter, std::ref(session)));
-	session.RegisterStateHandler(std::bind_front(&CSimulatedDispatcher::OnSessionState, counter));
-	counter->OnSessionState(session.IsAuthenticated() ? SessionState::Ready : SessionState::Disconnected, "");
-	if (!creator.Register("simulated", std::bind_front(&CSimulatedDispatcher::Create, counter), std::bind_front(&CSimulatedDispatcher::Stop, counter)))
+	session.RegisterHandler(std::bind_front(&CSimulatedDispatcher::OnMarketResponse, dispatcher));
+	dispatcher->SetDepthSubscriptionHandler(std::bind_front(&CSimulatedDispatcher::ChangeDepthSubscription, dispatcher, std::ref(session)));
+	session.RegisterStateHandler(std::bind_front(&CSimulatedDispatcher::OnSessionState, dispatcher));
+	dispatcher->OnSessionState(session.IsAuthenticated() ? SessionState::Ready : SessionState::Disconnected, "");
+	if (!creator.Register("simulated", std::bind_front(&CSimulatedDispatcher::Create, dispatcher), std::bind_front(&CSimulatedDispatcher::Stop, dispatcher)))
 	{
-		counter->Stop();
+		dispatcher->Stop();
 		return { trade::Error::Rejected, "Duplicate simulated adapter registration" };
 	}
-	return trade::zhongtai::Initialize(creator, m_zhongTaiDispatcher);
+	return trade::zhongtai::Initialize(creator, m_dispatcher_zhongtai);
 }
 
 void CBrokerService::Broadcast(const CRequest& push)

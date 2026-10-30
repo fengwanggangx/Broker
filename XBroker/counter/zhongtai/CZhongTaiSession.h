@@ -1,9 +1,10 @@
 #pragma once
 #include "ZhongTaiTypes.h"
 #include <mutex>
+class CZhongTaiDispatcher;
+
 namespace trade::zhongtai
 {
-	class CZhongTaiDispatcher;
 	class CZhongTaiSession final : public ITradeSession
 	{
 	public:

@@ -14,10 +14,7 @@ namespace net
 }
 class CSession;
 class CSimulatedDispatcher;
-namespace trade::zhongtai
-{
-	class CZhongTaiDispatcher;
-}
+class CZhongTaiDispatcher;
 
 class CBrokerService final
 {
@@ -39,8 +36,8 @@ private:
 
 private:
 	// Dispatchers outlive the trader and all borrowed callbacks; Stop controls teardown.
-	std::unique_ptr<CSimulatedDispatcher> m_simulatedDispatcher;
-	std::unique_ptr<trade::zhongtai::CZhongTaiDispatcher> m_zhongTaiDispatcher;
+	std::unique_ptr<CSimulatedDispatcher> m_dispatcher_simulated;
+	std::unique_ptr<CZhongTaiDispatcher> m_dispatcher_zhongtai;
 	CTradeService m_trader;
 	std::string m_strToken;
 	std::string m_strLastError;
