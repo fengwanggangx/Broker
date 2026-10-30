@@ -1,4 +1,5 @@
 #include "CounterSetup.h"
+#include "zhongtai/ZhongTaiSetup.h"
 #include "../service/CCounterFactory.h"
 #include "CSimulatedCounter.h"
 #include "../system/CSession.h"
@@ -185,6 +186,6 @@ namespace trade
 			counter.Stop();
 			return { Error::Rejected, "Duplicate simulated adapter registration" };
 		}
-		return {};
+		return zhongtai::Initialize(creator);
 	}
 } // namespace trade

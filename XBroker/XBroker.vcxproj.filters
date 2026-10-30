@@ -329,4 +329,19 @@
       <Filter>libs\release</Filter>
     </None>
   </ItemGroup>
+
+  <ItemGroup>
+    <ClCompile Include="counter\zhongtai\CZhongTaiApi.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\CZhongTaiCounter.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\CZhongTaiGateway.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\CZhongTaiStore.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\ZhongTaiConvert.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\ZhongTaiSetup.cpp"><Filter>counter</Filter></ClCompile>
+    <ClInclude Include="counter\zhongtai\CZhongTaiCounter.h"><Filter>counter</Filter></ClInclude>
+    <ClInclude Include="counter\zhongtai\CZhongTaiGateway.h"><Filter>counter</Filter></ClInclude>
+    <ClInclude Include="counter\zhongtai\CZhongTaiStore.h"><Filter>counter</Filter></ClInclude>
+    <ClInclude Include="counter\zhongtai\ZhongTaiConvert.h"><Filter>counter</Filter></ClInclude>
+    <ClInclude Include="counter\zhongtai\ZhongTaiSetup.h"><Filter>counter</Filter></ClInclude>
+    <ClInclude Include="counter\zhongtai\ZhongTaiTypes.h"><Filter>counter</Filter></ClInclude>
+  </ItemGroup>
 </Project>

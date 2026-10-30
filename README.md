@@ -43,3 +43,5 @@ python tests/check_contracts.py
 模拟柜台使用 `CSimulatedCounter::InstanceRef()` 单例，内部创建和管理 `CSimulatedCore` 与 `CStorager`。每个账户会话引用该单例并保持独立的事件接收器；服务停止时等待柜台工作线程退出并释放存储租约。
 
 深度行情按活动委托订阅：同一证券的首笔有效委托触发订阅，未收到有效盘口前等待撮合；全部委托成交、撤销或过期后退订。多个账户共享证券订阅，重连及账本恢复时按未完成委托重建订阅，发送失败会重试。交易规则不再作为预订阅清单。
+
+中泰传统 XTP 2.2.50.8 原生接入见 [中泰适配器说明](XBroker/counter/zhongtai/README.md)。默认禁用，通过 `XBROKER_ENABLE_XTP` 和独立 SDK 路径启用；不自动连接或交易。

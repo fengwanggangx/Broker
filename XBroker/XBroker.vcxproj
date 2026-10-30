@@ -222,4 +222,36 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
+
+  <ItemGroup>
+    <ClCompile Include="counter\zhongtai\CZhongTaiApi.cpp" />
+    <ClCompile Include="counter\zhongtai\CZhongTaiCounter.cpp" />
+    <ClCompile Include="counter\zhongtai\CZhongTaiGateway.cpp" />
+    <ClCompile Include="counter\zhongtai\CZhongTaiStore.cpp" />
+    <ClCompile Include="counter\zhongtai\ZhongTaiConvert.cpp" />
+    <ClCompile Include="counter\zhongtai\ZhongTaiSetup.cpp" />
+    <ClInclude Include="counter\zhongtai\CZhongTaiCounter.h" />
+    <ClInclude Include="counter\zhongtai\CZhongTaiGateway.h" />
+    <ClInclude Include="counter\zhongtai\CZhongTaiStore.h" />
+    <ClInclude Include="counter\zhongtai\ZhongTaiConvert.h" />
+    <ClInclude Include="counter\zhongtai\ZhongTaiSetup.h" />
+    <ClInclude Include="counter\zhongtai\ZhongTaiTypes.h" />
+  </ItemGroup>
+  <ItemDefinitionGroup Condition="'$(XBrokerEnableXtp)'=='true'">
+    <ClCompile>
+      <PreprocessorDefinitions>XBROKER_ENABLE_XTP;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(XBrokerXtpSdk)/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(XBrokerXtpSdk)/linux_glibc_2.17;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <LibraryDependencies>xtptraderapi;%(LibraryDependencies)</LibraryDependencies>
+    </Link>
+    <RemotePreBuildEvent>
+      <Command>printf '%s  %s\n' 'c55b053f21be35c03b734e7ee9774d86b771b27d23d5fa6d562869aa85eb7874' '$(XBrokerXtpSdk)/include/xtp_trader_api.h' 'f6d4b688c10306e1699330892c4275c8f8cb36fda541c8ced28fd23713f364ee' '$(XBrokerXtpSdk)/linux_glibc_2.17/libxtptraderapi.so' | sha256sum -c -</Command>
+    </RemotePreBuildEvent>
+  </ItemDefinitionGroup>
+  <Target Name="ValidateZhongTaiSdk" BeforeTargets="ClCompile" Condition="'$(XBrokerEnableXtp)'=='true'">
+    <Error Condition="'$(Platform)'!='x64'" Text="XTP requires Linux x64" />
+    <Error Condition="'$(XBrokerXtpSdk)'==''" Text="Set XBrokerXtpSdk to the SDK root on the build host" />
+  </Target>
 </Project>

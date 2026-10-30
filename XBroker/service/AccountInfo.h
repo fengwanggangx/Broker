@@ -13,7 +13,9 @@ enum class TradeAccountState
 	Disconnected,
 	Connected,
 	Error,
-	Connecting
+	Connecting,
+	Synchronizing,
+	Reconnecting
 };
 
 struct CBrokerInfo

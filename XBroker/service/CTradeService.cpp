@@ -221,7 +221,11 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		{
 			const auto mIter = m_accounts.find(account);
 			bConnected = m_accounts.end() != mIter && TradeAccountState::Connected == mIter->second.m_info.m_state;
-			if (!bConnected)
+			if (m_accounts.end() != mIter && (TradeAccountState::Reconnecting == mIter->second.m_info.m_state || TradeAccountState::Synchronizing == mIter->second.m_info.m_state))
+			{
+				bLoginBlocked = true;
+			}
+			if (!bConnected && !bLoginBlocked)
 			{
 				if (m_accounts.end() != mIter)
 				{
@@ -512,7 +516,7 @@ void CTradeService::OnEvent(const trade::CCountEvent& event)
 		}
 		if (trade::EventTy::Session == event.m_kind)
 		{
-			account->second.m_info.m_state = event.m_account.m_bConnected ? TradeAccountState::Connected : TradeAccountState::Disconnected;
+			account->second.m_info.m_state = 0 != event.m_account.m_nState ? static_cast<TradeAccountState>(event.m_account.m_nState) : (event.m_account.m_bConnected ? TradeAccountState::Connected : TradeAccountState::Disconnected);
 		}
 		info = account->second.m_info;
 		handler = m_handler_push;

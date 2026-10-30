@@ -22,6 +22,16 @@ namespace trade::protocol
 		wire.set_fee(row.m_nFee);
 		wire.set_time_ms(row.m_nTime);
 		wire.set_rule_version(row.m_strRuleVersion);
+		wire.set_broker_order_id(row.m_strBrokerOrderId);
+		wire.set_trading_day(row.m_nDay);
+		wire.set_raw_status(row.m_strRawStatus);
+		wire.set_broker_error(row.m_strError);
+		wire.set_cancel_pending(row.m_bCancelPending);
+		wire.set_extended_fields(true);
+		wire.set_fee_known(row.m_bFeeKnown);
+		wire.set_frozen_known(row.m_bFrozenKnown);
+		wire.set_sdk_client_id(row.m_sdkClientId);
+		wire.set_broker_time(row.m_nBrokerTime);
 	}
 	void WriteTrade(const trade::CTrade& row, request::TradeRecord& wire)
 	{
@@ -35,6 +45,13 @@ namespace trade::protocol
 		wire.set_quantity(row.m_nQuantity);
 		wire.set_fee(row.m_nFee);
 		wire.set_time_ms(row.m_nTime);
+		wire.set_broker_trade_id(row.m_strBrokerTradeId);
+		wire.set_broker_order_id(row.m_strBrokerOrderId);
+		wire.set_trading_day(row.m_nDay);
+		wire.set_report_index(row.m_reportIndex);
+		wire.set_market(row.m_market);
+		wire.set_extended_fields(true);
+		wire.set_fee_known(row.m_bFeeKnown);
 	}
 	void WritePosition(const trade::CPosition& row, request::TradePositionRecord& wire)
 	{
@@ -45,6 +62,9 @@ namespace trade::protocol
 		wire.set_frozen_quantity(row.m_nFrozen);
 		wire.set_today_quantity(row.m_nToday);
 		wire.set_book_cost_cents(row.m_nCost);
+		wire.set_extended_fields(true);
+		wire.set_frozen_known(row.m_bFrozenKnown);
+		wire.set_cost_known(row.m_bCostKnown);
 	}
 	CSecurity Security(const std::string& strValue)
 	{
@@ -56,8 +76,12 @@ namespace trade::protocol
 		SetAccountIdentity(row.m_accountIndex, wire);
 		wire.set_balance(row.m_nBalance);
 		wire.set_frozen(row.m_nFrozen);
-		wire.set_available(row.m_nBalance - row.m_nFrozen);
-		wire.set_available_snapshot(bReady && row.m_bConnected);
+		wire.set_available(row.m_bExplicitAvailable ? row.m_nAvailable : row.m_nBalance - row.m_nFrozen);
+		wire.set_extended_fields(true);
+		wire.set_funds_valid(row.m_bFundsValid);
+		wire.set_frozen_known(row.m_bFrozenKnown);
+		wire.set_account_state(row.m_nState);
+		wire.set_available_snapshot(bReady && row.m_bConnected && row.m_bFundsValid);
 		wire.set_connected(row.m_bConnected);
 	}
 
@@ -121,6 +145,12 @@ namespace trade::protocol
 		SetAccountIdentity(event.m_accountIndex, wire);
 		wire.set_kind(static_cast<int>(event.m_kind));
 		wire.set_connected(event.m_account.m_bConnected);
+		wire.set_extended_fields(true);
+		wire.set_account_valid(event.m_bAccountValid);
+		if (event.m_bAccountValid)
+		{
+			WriteFunds(event.m_account, true, *wire.mutable_account_snapshot());
+		}
 		switch (event.m_kind)
 		{
 		case EventTy::Order:
@@ -197,6 +227,12 @@ namespace trade::protocol
 			push.SetData(rows);
 		}
 		break;
+		}
+		if (event.m_bAccountValid)
+		{
+			request::TradeAccountInfo funds;
+			WriteFunds(event.m_account, true, funds);
+			push.SetEventAccount(funds);
 		}
 		return push;
 	}

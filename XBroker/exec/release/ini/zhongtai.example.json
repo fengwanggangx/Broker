@@ -1,0 +1,26 @@
+{
+  "client_id": 1,
+  "software_key": "REPLACE_WITH_ISSUED_KEY",
+  "software_version": "1.0.0",
+  "log_path": "/var/log/xbroker/zhongtai",
+  "sites": [
+    {
+      "broker_id": 2,
+      "name": "test",
+      "host": "192.0.2.1",
+      "port": 6001,
+      "local_ip": ""
+    },
+    {
+      "broker_id": 2,
+      "name": "other",
+      "host": "192.0.2.2",
+      "port": 6001,
+      "local_ip": ""
+    }
+  ],
+  "query_timeout_ms": 10000,
+  "query_interval_ms": 200,
+  "refresh_ms": 5000,
+  "queue_limit": 4096
+}
