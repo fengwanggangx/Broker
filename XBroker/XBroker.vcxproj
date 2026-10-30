@@ -184,18 +184,19 @@
     <ClInclude Include="request\request.pb.h" />
     <ClCompile Include="request\RequestCenter.cpp" />
     <ClInclude Include="request\RequestCenter.h" />
-    <ClCompile Include="counter\CSimulatedCounter.cpp" />
-    <ClCompile Include="counter\CSimulatedCounterStorage.cpp" />
-    <ClCompile Include="counter\CSimulatedCounterMarket.cpp" />
-    <ClInclude Include="counter\CSimulatedCounter.h" />
-    <ClCompile Include="counter\CounterSetup.cpp" />
-    <ClInclude Include="counter\CounterSetup.h" />
+    <ClCompile Include="counter\CSimulatedDispatcher.cpp" />
+    <ClCompile Include="counter\CSimulatedSession.cpp" />
+    <ClCompile Include="counter\CSimulatedDispatcherStorage.cpp" />
+    <ClCompile Include="counter\CSimulatedDispatcherMarket.cpp" />
+    <ClInclude Include="counter\CounterConfig.h" />
+    <ClInclude Include="counter\CSimulatedDispatcher.h" />
+    <ClInclude Include="counter\CSimulatedSession.h" />
     <ClCompile Include="counter\CSimulatedCore.cpp" />
     <ClInclude Include="counter\CSimulatedCore.h" />
     <ClInclude Include="counter\CStateEdit.h" />
     <ClCompile Include="counter\CStorager.cpp" />
     <ClInclude Include="counter\CStorager.h" />
-    <ClInclude Include="counter\ITradeCounter.h" />
+    <ClInclude Include="counter\ITradeSession.h" />
     <ClCompile Include="counter\TradeProtocol.cpp" />
     <ClInclude Include="counter\TradeProtocol.h" />
     <ClCompile Include="counter\TradeTypes.cpp" />
@@ -225,13 +226,13 @@
 
   <ItemGroup>
     <ClCompile Include="counter\zhongtai\CZhongTaiApi.cpp" />
-    <ClCompile Include="counter\zhongtai\CZhongTaiCounter.cpp" />
-    <ClCompile Include="counter\zhongtai\CZhongTaiGateway.cpp" />
+    <ClCompile Include="counter\zhongtai\CZhongTaiSession.cpp" />
+    <ClCompile Include="counter\zhongtai\CZhongTaiDispatcher.cpp" />
     <ClCompile Include="counter\zhongtai\CZhongTaiStore.cpp" />
     <ClCompile Include="counter\zhongtai\ZhongTaiConvert.cpp" />
     <ClCompile Include="counter\zhongtai\ZhongTaiSetup.cpp" />
-    <ClInclude Include="counter\zhongtai\CZhongTaiCounter.h" />
-    <ClInclude Include="counter\zhongtai\CZhongTaiGateway.h" />
+    <ClInclude Include="counter\zhongtai\CZhongTaiSession.h" />
+    <ClInclude Include="counter\zhongtai\CZhongTaiDispatcher.h" />
     <ClInclude Include="counter\zhongtai\CZhongTaiStore.h" />
     <ClInclude Include="counter\zhongtai\ZhongTaiConvert.h" />
     <ClInclude Include="counter\zhongtai\ZhongTaiSetup.h" />

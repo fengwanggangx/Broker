@@ -1,5 +1,5 @@
 #pragma once
-#include "../ITradeCounter.h"
+#include "../ITradeSession.h"
 #include <chrono>
 #include <functional>
 #include <memory>

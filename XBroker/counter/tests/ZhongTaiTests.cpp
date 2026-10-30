@@ -1,4 +1,4 @@
-#include "../zhongtai/CZhongTaiGateway.h"
+#include "../zhongtai/CZhongTaiDispatcher.h"
 #include "../zhongtai/ZhongTaiConvert.h"
 #include <future>
 #include <iostream>
@@ -203,6 +203,7 @@ namespace
 			Emit(event);
 			return {};
 		}
+
 		void Emit(CApiEvent event)
 		{
 			_TyHandler handler;
@@ -227,7 +228,7 @@ namespace
 		std::uint64_t m_session{ 0 }, m_order{ 1000 };
 		std::map<std::uint64_t, std::string> m_accounts;
 	};
-	CCounterReply Send(const std::shared_ptr<ITradeCounter>& counter, CReqParam request)
+	CCounterReply Send(const std::shared_ptr<ITradeSession>& counter, CReqParam request)
 	{
 		std::shared_ptr<std::promise<CCounterReply>> promise = std::make_shared<std::promise<CCounterReply>>();
 		std::future<CCounterReply> future = promise->get_future();
@@ -235,10 +236,11 @@ namespace
 		{
 			promise->set_value(reply);
 		}).Ok(),
-			"request enqueued");
+			  "request enqueued");
 		Check(std::future_status::ready == future.wait_for(std::chrono::seconds(4)), "request callback completed");
 		return future.get();
 	}
+
 	CReqParam Request(const _TyAccount& account, Operation operation)
 	{
 		CReqParam request;
@@ -247,6 +249,10 @@ namespace
 		if (Operation::Login == operation)
 		{
 			request.m_param = CLoginParam{ "secret", 1 == account.first ? "primary" : "secondary" };
+		}
+		else if (Operation::Disconnect == operation)
+		{
+			request.m_param = CDisconnectParam{};
 		}
 		else if (Operation::Submit == operation)
 		{
@@ -279,22 +285,24 @@ namespace
 		}
 		return request;
 	}
+
 	void Run()
 	{
 		Check(IsStock("600000.SSE") && IsStock("000001.SZSE") && !IsStock("510300.SSE"), "ordinary stocks only");
 		Check(1793325600000LL == BrokerTime(20261030100000000LL), "Shanghai epoch conversion");
 		CConfig config;
 		config.m_queryIntervalMs = 0;
-		config.m_queryTimeoutMs = 100;
+		// Allow the 1000-row pagination fixture to run under debug iterators.
+		config.m_queryTimeoutMs = 1000;
 		config.m_refreshMs = 60000;
 		config.m_sites = { { 1, "primary", "host-a", "", 1 }, { 2, "secondary", "host-b", "", 2 } };
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::unique_ptr<CApi> api = std::make_unique<CApi>();
 		CApi* fake = api.get();
-		std::shared_ptr<CZhongTaiGateway> gateway = std::make_shared<CZhongTaiGateway>(config, std::move(api), std::make_unique<CStore>(memory));
+		std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
 		gateway->Start();
 		_TyAccount a{ 1, "000123" }, b{ 2, "000123" };
-		std::shared_ptr<ITradeCounter> first = gateway->Create({ a, "zhongtai_xtp" }), second = gateway->Create({ b, "zhongtai_xtp" });
+		std::shared_ptr<ITradeSession> first = gateway->Create({ a, "zhongtai_xtp" }), second = gateway->Create({ b, "zhongtai_xtp" });
 		Check(Send(first, Request(a, Operation::Login)).m_result.Ok(), "first login and synchronization");
 		Check(Send(second, Request(b, Operation::Login)).m_result.Ok(), "second login different site");
 		{
@@ -334,34 +342,34 @@ namespace
 		trade.m_trade.m_reportIndex = 2;
 		fake->Emit(trade);
 		Send(first, Request(a, Operation::Orders));
-		CAccountData snapshot = first->Snapshot(a);
+		CAccountData snapshot = first->Snapshot();
 		Check(2 == snapshot.m_trades.size() && 40 == snapshot.m_orders.front().m_nFilled, "report index dedup and partial fills");
-		Check(second->Snapshot(b).m_orders.empty(), "account isolation");
+		Check(second->Snapshot().m_orders.empty(), "account isolation");
 		CReqParam cancel = Request(a, Operation::Cancel);
 		std::get<CCancelParam>(cancel.m_param).m_orderId = id;
 		fake->m_cancelFailure = true;
 		Check(Send(first, cancel).m_result.Ok(), "cancel send receipt");
 		Send(first, Request(a, Operation::Orders));
-		Check(!first->Snapshot(a).m_orders.front().m_bCancelPending && Status::PartiallyFilled == first->Snapshot(a).m_orders.front().m_status, "cancel rejection keeps active order");
+		Check(!first->Snapshot().m_orders.front().m_bCancelPending && Status::PartiallyFilled == first->Snapshot().m_orders.front().m_status, "cancel rejection keeps active order");
 		Check(Send(first, cancel).m_result.Ok(), "cancel queued");
 		Send(first, Request(a, Operation::Orders));
-		Check(Status::Cancelled == first->Snapshot(a).m_orders.front().m_status, "terminal cancellation");
+		Check(Status::Cancelled == first->Snapshot().m_orders.front().m_status, "terminal cancellation");
 		CApiEvent stale;
 		stale.m_type = ApiEventType::Order;
 		stale.m_session = 1;
 		stale.m_hasRow = true;
-		stale.m_order = first->Snapshot(a).m_orders.front();
+		stale.m_order = first->Snapshot().m_orders.front();
 		stale.m_order.m_status = Status::Accepted;
 		stale.m_order.m_nBrokerTime = 1;
 		fake->Emit(stale);
 		Send(first, Request(a, Operation::Orders));
-		Check(Status::Cancelled == first->Snapshot(a).m_orders.front().m_status, "stale callback cannot regress terminal order");
+		Check(Status::Cancelled == first->Snapshot().m_orders.front().m_status, "stale callback cannot regress terminal order");
 
 		CApiEvent external;
 		external.m_type = ApiEventType::Order;
 		external.m_session = 1;
 		external.m_hasRow = true;
-		external.m_order = first->Snapshot(a).m_orders.front();
+		external.m_order = first->Snapshot().m_orders.front();
 		external.m_order.m_strBrokerOrderId = "90001";
 		external.m_order.m_sdkClientId = 0;
 		external.m_order.m_clientId = 0;
@@ -375,13 +383,13 @@ namespace
 		}
 		fake->Emit(external);
 		Send(first, Request(a, Operation::Orders));
-		Check(2 == first->Snapshot(a).m_orders.size() && 0 == first->Snapshot(a).m_orders.back().m_clientId, "external terminal order has no invented strategy association");
+		Check(2 == first->Snapshot().m_orders.size() && 0 == first->Snapshot().m_orders.back().m_clientId, "external terminal order has no invented strategy association");
 		CReqParam rejected = Request(a, Operation::Submit);
 		std::get<CSubmitParam>(rejected.m_param).m_order.m_clientId = 2;
 		fake->m_rejectNext = true;
 		Check(Send(first, rejected).m_result.Ok(), "SDK receipt precedes rejection");
 		Send(first, Request(a, Operation::Orders));
-		Check(Status::Rejected == first->Snapshot(a).m_orders.back().m_status, "broker rejection is final");
+		Check(Status::Rejected == first->Snapshot().m_orders.back().m_status, "broker rejection is final");
 		CReqParam filled = Request(a, Operation::Submit);
 		std::get<CSubmitParam>(filled.m_param).m_order.m_clientId = 3;
 		Check(Send(first, filled).m_result.Ok(), "next order after rejection");
@@ -391,7 +399,7 @@ namespace
 		trade.m_trade.m_nQuantity = 100;
 		fake->Emit(trade);
 		Send(first, Request(a, Operation::Orders));
-		Check(Status::Filled == first->Snapshot(a).m_orders.back().m_status, "complete fill from trade callback");
+		Check(Status::Filled == first->Snapshot().m_orders.back().m_status, "complete fill from trade callback");
 		CTrade tomorrow = trade.m_trade;
 		++tomorrow.m_nDay;
 		Check(TradeKey(tomorrow) != TradeKey(trade.m_trade), "cross-day reports remain distinct");
@@ -401,21 +409,56 @@ namespace
 		Check(Send(first, Request(a, Operation::Funds)).m_result.Ok(), "automatic reconnect and synchronize");
 		fake->Emit(stale);
 		Send(first, Request(a, Operation::Orders));
-		Check(Status::Cancelled == first->Snapshot(a).m_orders.front().m_status, "retired SDK session ignored");
+		Check(Status::Cancelled == first->Snapshot().m_orders.front().m_status, "retired SDK session ignored");
 		fake->m_hang = true;
 		Check(Error::Timeout == Send(first, Request(a, Operation::Funds)).m_result.m_error, "query timeout completed");
 		gateway->Stop();
-		Check(!first->Snapshot(a).m_bReady, "stop invalidates snapshot");
+		Check(!first->Snapshot().m_bReady, "stop invalidates snapshot");
 		std::uint64_t sequence = memory->m_data[a].sequence();
 		Check(0 < sequence && 4 == memory->m_data[a].orders_size(), "durable journal preserved");
 		std::unique_ptr<CApi> restartApi = std::make_unique<CApi>();
-		std::shared_ptr<CZhongTaiGateway> restarted = std::make_shared<CZhongTaiGateway>(config, std::move(restartApi), std::make_unique<CStore>(memory));
+		std::shared_ptr<CZhongTaiDispatcher> restarted = std::make_shared<CZhongTaiDispatcher>(config, std::move(restartApi), std::make_unique<CStore>(memory));
 		restarted->Start();
-		std::shared_ptr<ITradeCounter> recovered = restarted->Create({ a, "zhongtai_xtp" });
+		std::shared_ptr<ITradeSession> recovered = restarted->Create({ a, "zhongtai_xtp" });
 		Check(Send(recovered, Request(a, Operation::Login)).m_result.Ok(), "restart recovery");
-		Check(recovered->Snapshot(a).m_version > sequence && 3 == recovered->Snapshot(a).m_trades.size(), "restart preserves sequence and dedup");
+		Check(recovered->Snapshot().m_version > sequence && 3 == recovered->Snapshot().m_trades.size(), "restart preserves sequence and dedup");
 		restarted->Stop();
 	}
+
+	void SessionLifecycle()
+	{
+		CConfig config;
+		config.m_queryIntervalMs = 0;
+		config.m_refreshMs = 60000;
+		config.m_sites = { { 1, "primary", "host-a", "", 1 }, { 2, "secondary", "host-b", "", 2 } };
+		std::shared_ptr<CZhongTaiDispatcher> dispatcher = std::make_shared<CZhongTaiDispatcher>(config, std::make_unique<CApi>(), std::make_unique<CStore>(std::make_shared<CMemory>()));
+		dispatcher->Start();
+		_TyAccount a{ 1, "000123" }, b{ 2, "000123" };
+		std::shared_ptr<ITradeSession> first = dispatcher->Create({ a, "zhongtai_xtp" });
+		std::shared_ptr<ITradeSession> second = dispatcher->Create({ b, "zhongtai_xtp" });
+		Check(Send(first, Request(a, Operation::Login)).m_result.Ok(), "lifecycle first login");
+		Check(Send(second, Request(b, Operation::Login)).m_result.Ok(), "lifecycle second login");
+		std::atomic_int rejectedCallbacks{ 0 };
+		Check(!first->SendRequest(Request(b, Operation::Funds), [&rejectedCallbacks](const CCounterReply&)
+		{
+			++rejectedCallbacks;
+		}).Ok() && 0 == rejectedCallbacks.load(),
+			  "mismatch rejected without callback");
+		Check(Send(first, Request(a, Operation::Disconnect)).m_result.Ok(), "business disconnect acknowledged");
+		first->Close();
+		Check(!first->Snapshot().m_bReady && !first->SendRequest(Request(a, Operation::Funds), {}).Ok(), "closed account unavailable");
+		Check(Send(second, Request(b, Operation::Funds)).m_result.Ok(), "closing first preserves shared dispatcher");
+		std::shared_ptr<ITradeSession> replacement = dispatcher->Create({ a, "zhongtai_xtp" });
+		Check(Send(replacement, Request(a, Operation::Login)).m_result.Ok(), "replacement account login");
+		Check(!first->SendRequest(Request(a, Operation::Submit), {}).Ok(), "retired account cannot send");
+		dispatcher->Stop();
+		Check(!second->SendRequest(Request(b, Operation::Funds), [&rejectedCallbacks](const CCounterReply&)
+		{
+			++rejectedCallbacks;
+		}).Ok() && 0 == rejectedCallbacks.load(),
+			  "stopped dispatcher rejects without callback");
+	}
+
 	void Failures()
 	{
 		CConfig config;
@@ -425,10 +468,10 @@ namespace
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::unique_ptr<CApi> api = std::make_unique<CApi>();
 		CApi* fake = api.get();
-		std::shared_ptr<CZhongTaiGateway> gateway = std::make_shared<CZhongTaiGateway>(config, std::move(api), std::make_unique<CStore>(memory));
+		std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
 		gateway->Start();
 		_TyAccount account{ 1, "000999" };
-		std::shared_ptr<ITradeCounter> counter = gateway->Create({ account, "zhongtai_xtp" });
+		std::shared_ptr<ITradeSession> counter = gateway->Create({ account, "zhongtai_xtp" });
 		CReqParam bad = Request(account, Operation::Login);
 		std::get<CLoginParam>(bad.m_param).m_strPassword = "bad";
 		Check(!Send(counter, bad).m_result.Ok(), "authentication error rejected");
@@ -455,16 +498,16 @@ namespace
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::unique_ptr<CApi> api = std::make_unique<CApi>();
 		CApi* fake = api.get();
-		std::shared_ptr<CZhongTaiGateway> gateway = std::make_shared<CZhongTaiGateway>(config, std::move(api), std::make_unique<CStore>(memory));
+		std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
 		gateway->Start();
 		_TyAccount account{ 1, "001" };
-		std::shared_ptr<ITradeCounter> counter = gateway->Create({ account, "zhongtai_xtp" });
+		std::shared_ptr<ITradeSession> counter = gateway->Create({ account, "zhongtai_xtp" });
 		Check(Send(counter, Request(account, Operation::Login)).m_result.Ok(), "overflow test login");
 		Check(Send(counter, Request(account, Operation::Submit)).m_result.Ok(), "overflow test order");
 		Send(counter, Request(account, Operation::Funds));
 		fake->m_pages = true;
 		Check(!Send(counter, Request(account, Operation::Orders)).m_result.Ok(), "callback overflow fails outstanding query");
-		Check(!counter->Snapshot(account).m_bReady, "overflow invalidates cache");
+		Check(!counter->Snapshot().m_bReady, "overflow invalidates cache");
 		gateway->Stop();
 	}
 
@@ -475,6 +518,7 @@ int main()
 	{
 		Run();
 		Failures();
+		SessionLifecycle();
 		Overflow();
 		std::cout << "ZhongTai adapter tests passed\n";
 		return 0;

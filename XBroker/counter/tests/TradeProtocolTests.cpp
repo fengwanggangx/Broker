@@ -4,7 +4,7 @@ int main()
 {
 	_TyAccount account{ 1, "000123" };
 	CTradeAccountInfo info = AccountInfo(account);
-	info.m_strBrokerName = "券商";
+	info.m_strBrokerName = "鍒稿晢";
 	if (account != AccountIndex(trade::protocol::AccountPayload(info)))
 	{
 		return 1;

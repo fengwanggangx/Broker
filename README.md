@@ -40,7 +40,11 @@ python tests/check_contracts.py
 
 `tests/service_integration.py` 通过 `--ledger-fixture` 接收预置账本 SQL（包含表结构），使用券商1/default/000123、券商1/other/000123、券商2/default/000123、券商1/default/123，初始余额依次为10000000、20000000、30000000、40000000分。
 
-模拟柜台使用 `CSimulatedCounter::InstanceRef()` 单例，内部创建和管理 `CSimulatedCore` 与 `CStorager`。每个账户会话引用该单例并保持独立的事件接收器；服务停止时等待柜台工作线程退出并释放存储租约。
+交易适配器统一返回绑定单个账户的 `ITradeSession`：通过 `SendRequest()` 接收请求、`Snapshot()` 读取本账户快照、`SetEventHandler()` 接收事件。`Close()` 仅清理会话资源；业务退出先发送断开请求，成功后关闭会话。模拟账户存在活动委托时仍拒绝断开。
+
+模拟实现由 `CSimulatedSession → CSimulatedDispatcher → CSimulatedCore` 组成；中泰实现由 `CZhongTaiSession → CZhongTaiDispatcher → IZhongTaiApi` 组成。每个账户一个 Session，同种适配器共享显式创建的 Dispatcher，不使用模拟柜台全局单例。Dispatcher 管理队列、工作线程、状态和持久化，服务停止时统一 `Stop()`。会话实例号隔离旧请求与回报。
+
+请求入队成功后通过响应回调完成一次；入队失败不调用回调。事件可能先于请求响应。SDK 接受发送不代表交易所接受或成交，未知结果先查询核对，不自动重发。
 
 深度行情按活动委托订阅：同一证券的首笔有效委托触发订阅，未收到有效盘口前等待撮合；全部委托成交、撤销或过期后退订。多个账户共享证券订阅，重连及账本恢复时按未完成委托重建订阅，发送失败会重试。交易规则不再作为预订阅清单。
 

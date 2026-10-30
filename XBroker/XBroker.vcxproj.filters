@@ -135,10 +135,13 @@
     <ClInclude Include="request\RequestCenter.h">
       <Filter>request</Filter>
     </ClInclude>
-    <ClInclude Include="counter\CSimulatedCounter.h">
+    <ClInclude Include="counter\CounterConfig.h">
       <Filter>counter</Filter>
     </ClInclude>
-    <ClInclude Include="counter\CounterSetup.h">
+    <ClInclude Include="counter\CSimulatedDispatcher.h">
+      <Filter>counter</Filter>
+    </ClInclude>
+    <ClInclude Include="counter\CSimulatedSession.h">
       <Filter>counter</Filter>
     </ClInclude>
     <ClInclude Include="counter\CSimulatedCore.h">
@@ -150,7 +153,7 @@
     <ClInclude Include="counter\CStorager.h">
       <Filter>counter</Filter>
     </ClInclude>
-    <ClInclude Include="counter\ITradeCounter.h">
+    <ClInclude Include="counter\ITradeSession.h">
       <Filter>counter</Filter>
     </ClInclude>
     <ClInclude Include="counter\TradeProtocol.h">
@@ -266,16 +269,16 @@
     <ClCompile Include="request\RequestCenter.cpp">
       <Filter>request</Filter>
     </ClCompile>
-    <ClCompile Include="counter\CSimulatedCounter.cpp">
+    <ClCompile Include="counter\CSimulatedDispatcher.cpp">
       <Filter>counter</Filter>
     </ClCompile>
-    <ClCompile Include="counter\CSimulatedCounterStorage.cpp">
+    <ClCompile Include="counter\CSimulatedSession.cpp">
       <Filter>counter</Filter>
     </ClCompile>
-    <ClCompile Include="counter\CSimulatedCounterMarket.cpp">
+    <ClCompile Include="counter\CSimulatedDispatcherStorage.cpp">
       <Filter>counter</Filter>
     </ClCompile>
-    <ClCompile Include="counter\CounterSetup.cpp">
+    <ClCompile Include="counter\CSimulatedDispatcherMarket.cpp">
       <Filter>counter</Filter>
     </ClCompile>
     <ClCompile Include="counter\CSimulatedCore.cpp">
@@ -332,13 +335,13 @@
 
   <ItemGroup>
     <ClCompile Include="counter\zhongtai\CZhongTaiApi.cpp"><Filter>counter</Filter></ClCompile>
-    <ClCompile Include="counter\zhongtai\CZhongTaiCounter.cpp"><Filter>counter</Filter></ClCompile>
-    <ClCompile Include="counter\zhongtai\CZhongTaiGateway.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\CZhongTaiSession.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\CZhongTaiDispatcher.cpp"><Filter>counter</Filter></ClCompile>
     <ClCompile Include="counter\zhongtai\CZhongTaiStore.cpp"><Filter>counter</Filter></ClCompile>
     <ClCompile Include="counter\zhongtai\ZhongTaiConvert.cpp"><Filter>counter</Filter></ClCompile>
     <ClCompile Include="counter\zhongtai\ZhongTaiSetup.cpp"><Filter>counter</Filter></ClCompile>
-    <ClInclude Include="counter\zhongtai\CZhongTaiCounter.h"><Filter>counter</Filter></ClInclude>
-    <ClInclude Include="counter\zhongtai\CZhongTaiGateway.h"><Filter>counter</Filter></ClInclude>
+    <ClInclude Include="counter\zhongtai\CZhongTaiSession.h"><Filter>counter</Filter></ClInclude>
+    <ClInclude Include="counter\zhongtai\CZhongTaiDispatcher.h"><Filter>counter</Filter></ClInclude>
     <ClInclude Include="counter\zhongtai\CZhongTaiStore.h"><Filter>counter</Filter></ClInclude>
     <ClInclude Include="counter\zhongtai\ZhongTaiConvert.h"><Filter>counter</Filter></ClInclude>
     <ClInclude Include="counter\zhongtai\ZhongTaiSetup.h"><Filter>counter</Filter></ClInclude>

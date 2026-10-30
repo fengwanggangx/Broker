@@ -1,5 +1,5 @@
 #include "CSimulatedCore.h"
-#include "CSimulatedCounter.h"
+#include "CSimulatedDispatcher.h"
 #include <iostream>
 #include <stdexcept>
 #include <future>
@@ -90,6 +90,7 @@ namespace
 			throw std::runtime_error(pText);
 		}
 	}
+
 	CRule Rule(int nDay)
 	{
 		CRule rule;
@@ -103,6 +104,7 @@ namespace
 		rule.m_nMinimumFee = 5;
 		return rule;
 	}
+
 	CReqParam Request(Operation operation, _TyAccount nAccount = TestAccount(1), std::uint64_t nClient = 1, std::int64_t nQuantity = 100, std::int64_t nPrice = 1000)
 	{
 		CReqParam request;
@@ -118,15 +120,16 @@ namespace
 		}
 		return request;
 	}
+
 	void Connect(CSimulatedCore& counter, const _TyAccount& nId, std::int64_t nNow)
 	{
 		Check(counter.Execute(Request(Operation::Connect, nId), nNow).m_result.Ok(), "connect");
 	}
 
-	class CDeferredBroker final : public ITradeCounter
+	class CDeferredBroker final : public ITradeSession
 	{
 	public:
-		CResult SendRequest(CReqParam request, ReplyHandler handler) override
+		CResult SendRequest(CReqParam request, _TyReplyHandler handler) override
 		{
 			m_work.emplace_back([this, request, handler]()
 			{
@@ -174,21 +177,22 @@ namespace
 			});
 			return {};
 		}
-		void SetEventHandler(EventHandler handler) override
+		void SetEventHandler(_TyEventHandler handler) override
 		{
 			m_handler = std::move(handler);
 		}
-		CAccountData Snapshot(const _TyAccount&) const override
+		CAccountData Snapshot() const override
 		{
 			CAccountData snapshot;
 			snapshot.m_bReady = true;
 			snapshot.m_account = { TestAccount(1), 1000000, 0, true, true };
 			return snapshot;
 		}
-		void Stop() override
+		void Close() override
 		{
 			m_work.clear();
 		}
+
 		void Pump()
 		{
 			while (!m_work.empty())
@@ -200,10 +204,10 @@ namespace
 		}
 
 	private:
-		EventHandler m_handler;
+		_TyEventHandler m_handler;
 		std::deque<std::function<void()>> m_work;
 	};
-	void Contract(ITradeCounter& gateway, const std::function<void()>& pump)
+	void Contract(ITradeSession& gateway, const std::function<void()>& pump)
 	{
 		std::atomic_int events{ 0 };
 		gateway.SetEventHandler([&events](const CCountEvent& event)
@@ -235,8 +239,9 @@ namespace
 		Check(send(Request(Operation::Submit, TestAccount(1), 99)).m_result.Ok(), "submit contract");
 		Check(0 < events.load(), "order event may precede reply");
 		gateway.SetEventHandler({});
-		gateway.Stop();
+		gateway.Close();
 	}
+
 	void Boundaries()
 	{
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
@@ -274,8 +279,8 @@ namespace
 		Check(counter.Execute(cancel, 1200).m_result.Ok(), "terminal cancel idempotent");
 		counter.Stop();
 		std::shared_ptr<CMemory> asyncMemory = std::make_shared<CMemory>();
-		CSimulatedCounter& gateway = CSimulatedCounter::InstanceRef();
-		Check(&gateway == &CSimulatedCounter::InstanceRef(), "single counter instance");
+		std::shared_ptr<CSimulatedDispatcher> dispatcher = std::make_shared<CSimulatedDispatcher>();
+		CSimulatedDispatcher& gateway = *dispatcher;
 		asyncMemory->m_bFail = true;
 		Check(!gateway.Start(std::make_unique<CStore>(asyncMemory), []()
 		{
@@ -283,7 +288,7 @@ namespace
 		}, {}, {}, {})
 					  .Ok() &&
 				  !asyncMemory->m_bLease,
-			  "failed start releases singleton storage lease");
+			  "failed start releases dispatcher storage lease");
 		asyncMemory->m_bFail = false;
 		Check(gateway.Start(std::make_unique<CStore>(asyncMemory), []()
 		{
@@ -296,19 +301,21 @@ namespace
 			return 1100;
 		}, {}, {}, {})
 				   .Ok(),
-			  "duplicate singleton start rejected");
+			  "duplicate dispatcher start rejected");
 		gateway.OnMarketState(true);
-		Contract(gateway, []()
+		std::shared_ptr<ITradeSession> session = dispatcher->Create({ TestAccount(1), "simulated" });
+		Contract(*session, []()
 		{
 		});
-		Check(!asyncMemory->m_bLease && gateway.Snapshot(TestAccount(1)).m_orders.empty(), "stop releases lease and clears singleton snapshots");
+		gateway.Stop();
+		Check(!asyncMemory->m_bLease && gateway.Snapshot(TestAccount(1)).m_orders.empty(), "stop releases lease and clears dispatcher snapshots");
 		std::shared_ptr<CMemory> restartMemory = std::make_shared<CMemory>();
 		Check(gateway.Start(std::make_unique<CStore>(restartMemory), []()
 		{
 			return 1100;
 		}, { { TestAccount(1), 2000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
 				  .Ok(),
-			  "singleton restart");
+			  "dispatcher restart");
 		Check(2000000 == gateway.Snapshot(TestAccount(1)).m_account.m_nBalance && gateway.Snapshot(TestAccount(1)).m_orders.empty(), "restart uses fresh store");
 		gateway.Stop();
 		gateway.Stop();
@@ -318,19 +325,104 @@ namespace
 			broker.Pump();
 		});
 	}
+
+	void SessionIsolation()
+	{
+		std::shared_ptr<CSimulatedDispatcher> dispatcher = std::make_shared<CSimulatedDispatcher>();
+		Check(dispatcher->Start(std::make_unique<CStore>(std::make_shared<CMemory>()), []()
+		{
+			return 1100;
+		}, { { TestAccount(1), 1000000, 0, false, true }, { TestAccount(2), 2000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
+				  .Ok(),
+			  "session dispatcher start");
+		dispatcher->OnMarketState(true);
+		std::shared_ptr<ITradeSession> first = dispatcher->Create({ TestAccount(1), "simulated" });
+		std::shared_ptr<ITradeSession> second = dispatcher->Create({ TestAccount(2), "simulated" });
+		auto send = [](const std::shared_ptr<ITradeSession>& session, CReqParam request)
+		{
+			std::shared_ptr<std::promise<CCounterReply>> promise = std::make_shared<std::promise<CCounterReply>>();
+			std::future<CCounterReply> future = promise->get_future();
+			Check(session->SendRequest(std::move(request), [promise](const CCounterReply& reply)
+			{
+				promise->set_value(reply);
+			}).Ok(),
+				  "session request queued");
+			Check(std::future_status::ready == future.wait_for(std::chrono::seconds(3)), "session response completed");
+			return future.get();
+		};
+		Check(send(first, Request(Operation::Connect)).m_result.Ok(), "first account connected");
+		Check(send(second, Request(Operation::Connect, TestAccount(2))).m_result.Ok(), "second account connected");
+		Check(1000000 == first->Snapshot().m_account.m_nBalance && 2000000 == second->Snapshot().m_account.m_nBalance, "session snapshots bound to account");
+		std::atomic_int mismatchedReplies{ 0 };
+		Check(!first->SendRequest(Request(Operation::Funds, TestAccount(2)), [&mismatchedReplies](const CCounterReply&)
+		{
+			++mismatchedReplies;
+		}).Ok() && 0 == mismatchedReplies.load(),
+			  "account mismatch rejected without callback");
+		Check(send(first, Request(Operation::Submit)).m_result.Ok(), "active order created");
+		Check(!send(first, Request(Operation::Disconnect)).m_result.Ok(), "active order prevents business disconnect");
+		Check(first->Snapshot().m_account.m_bConnected, "failed disconnect keeps session usable");
+		CReqParam cancel = Request(Operation::Cancel);
+		std::get<CCancelParam>(cancel.m_param).m_orderId = first->Snapshot().m_orders.front().m_orderId;
+		Check(send(first, std::move(cancel)).m_result.Ok(), "cancel before disconnect");
+		Check(send(first, Request(Operation::Disconnect)).m_result.Ok(), "backend confirms disconnect");
+		first->Close();
+		Check(!first->Snapshot().m_bReady && !first->SendRequest(Request(Operation::Funds), {}).Ok(), "closed session rejects requests");
+		Check(send(second, Request(Operation::Funds, TestAccount(2))).m_result.Ok(), "closing first leaves second running");
+
+		std::promise<void> entered;
+		std::promise<void> release;
+		std::shared_future<void> released = release.get_future().share();
+		Check(second->SendRequest(Request(Operation::Funds, TestAccount(2)), [&entered, released](const CCounterReply&)
+		{
+			entered.set_value();
+			released.wait_for(std::chrono::seconds(3));
+		}).Ok(),
+			  "block worker for deterministic retirement");
+		Check(std::future_status::ready == entered.get_future().wait_for(std::chrono::seconds(3)), "worker barrier reached");
+		std::promise<CCounterReply> retired;
+		std::future<CCounterReply> retiredReply = retired.get_future();
+		std::atomic_int completions{ 0 };
+		Check(second->SendRequest(Request(Operation::Funds, TestAccount(2)), [&retired, &completions](const CCounterReply& reply)
+		{
+			++completions;
+			retired.set_value(reply);
+		}).Ok(),
+			  "old session request queued");
+		std::shared_ptr<ITradeSession> replacement = dispatcher->Create({ TestAccount(2), "simulated" });
+		release.set_value();
+		Check(std::future_status::ready == retiredReply.wait_for(std::chrono::seconds(3)) && !retiredReply.get().m_result.Ok(), "queued old instance is rejected");
+		Check(!second->SendRequest(Request(Operation::Funds, TestAccount(2)), {}).Ok(), "retired wrapper cannot submit");
+		Check(send(replacement, Request(Operation::Funds, TestAccount(2))).m_result.Ok(), "replacement session works");
+		Check(1 == completions.load(), "retired request completes exactly once");
+		std::atomic_int pending{ 0 };
+		for (int index = 0; 64 > index; ++index)
+		{
+			Check(replacement->SendRequest(Request(Operation::Funds, TestAccount(2)), [&pending](const CCounterReply&)
+			{
+				++pending;
+			}).Ok(),
+				  "shutdown request accepted");
+		}
+		dispatcher->Stop();
+		Check(64 == pending.load(), "shutdown completes every accepted request");
+		Check(!replacement->Snapshot().m_bReady && !replacement->SendRequest(Request(Operation::Funds, TestAccount(2)), {}).Ok(), "stopped dispatcher rejects requests");
+	}
+
 	void DemandSubscriptions()
 	{
-		CSimulatedCounter& gateway = CSimulatedCounter::InstanceRef();
+		std::shared_ptr<CSimulatedDispatcher> dispatcher = std::make_shared<CSimulatedDispatcher>();
+		CSimulatedDispatcher& gateway = *dispatcher;
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::atomic_int64_t now{ 1100 };
 		std::mutex subscriptionMutex;
 		std::condition_variable subscriptionCondition;
 		std::vector<std::pair<std::string, bool>> subscriptions;
 		std::atomic_int subscriptionFailures{ 1 };
-		// Stop the singleton before callback captures leave scope, including failed checks.
+		// Stop the dispatcher before callback captures leave scope, including failed checks.
 		struct CCounterStopGuard
 		{
-			CSimulatedCounter& m_counter;
+			CSimulatedDispatcher& m_counter;
 			~CCounterStopGuard()
 			{
 				m_counter.Stop();
@@ -356,11 +448,15 @@ namespace
 		};
 		gateway.SetDepthSubscriptionHandler(handler);
 		gateway.OnMarketState(true);
-		auto send = [&gateway](CReqParam request)
+		std::map<_TyAccount, std::shared_ptr<ITradeSession>> sessions;
+		sessions.emplace(TestAccount(1), dispatcher->Create({ TestAccount(1), "simulated" }));
+		sessions.emplace(TestAccount(2), dispatcher->Create({ TestAccount(2), "simulated" }));
+		auto send = [&sessions](CReqParam request)
 		{
 			std::shared_ptr<std::promise<CCounterReply>> promise = std::make_shared<std::promise<CCounterReply>>();
 			std::future<CCounterReply> future = promise->get_future();
-			Check(gateway.SendRequest(std::move(request), [promise](const CCounterReply& reply)
+			std::shared_ptr<ITradeSession> session = sessions.at(request.m_accountIndex);
+			Check(session->SendRequest(std::move(request), [promise](const CCounterReply& reply)
 			{
 				promise->set_value(reply);
 			}).Ok(),
@@ -459,6 +555,7 @@ namespace
 		UpdateAccountData(cache, event);
 		Check(1 == cache.m_orders.size() && Status::Cancelled == cache.m_orders[0].m_status && TestAccount(1) == cache.m_account.m_accountIndex, "incremental cache replaces rows without duplicating history");
 	}
+
 	void Run()
 	{
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
@@ -529,6 +626,7 @@ namespace
 		Check(!replay.Renew().Ok() && !replay.Ready(), "fencing");
 		replay.Stop();
 	}
+
 	void IdentityIsolation()
 	{
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
@@ -572,6 +670,7 @@ int main()
 		Run();
 		Boundaries();
 		DemandSubscriptions();
+		SessionIsolation();
 		std::cout << "counter tests passed\n";
 		return 0;
 	}

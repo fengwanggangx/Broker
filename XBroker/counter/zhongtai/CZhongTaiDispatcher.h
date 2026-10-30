@@ -1,7 +1,7 @@
 #pragma once
 #include "CZhongTaiStore.h"
-#include "../../service/CCounterFactory.h"
-#include "CZhongTaiCounter.h"
+#include "../CounterConfig.h"
+#include "CZhongTaiSession.h"
 #include <condition_variable>
 #include <deque>
 #include <thread>
@@ -10,28 +10,29 @@
 #include <set>
 namespace trade::zhongtai
 {
-	class CZhongTaiGateway final : public std::enable_shared_from_this<CZhongTaiGateway>
+	class CZhongTaiDispatcher final : public std::enable_shared_from_this<CZhongTaiDispatcher>
 	{
 	public:
-		CZhongTaiGateway(CConfig config, std::unique_ptr<IZhongTaiApi> api, std::unique_ptr<IZhongTaiStore> store);
-		~CZhongTaiGateway();
+		CZhongTaiDispatcher(CConfig config, std::unique_ptr<IZhongTaiApi> api, std::unique_ptr<IZhongTaiStore> store);
+		~CZhongTaiDispatcher();
 		void Start();
 		void Stop();
 		void Receive(CApiEvent event);
-		std::shared_ptr<ITradeCounter> Create(const CCounterConfig& config);
-		CResult Send(CReqParam request, ITradeCounter::ReplyHandler handler, std::uint64_t instance);
+		bool IsCurrent(const _TyAccount& account, std::uint64_t instance);
+		std::shared_ptr<ITradeSession> Create(const CCounterConfig& config);
+		CResult Send(CReqParam request, ITradeSession::_TyReplyHandler handler, std::uint64_t instance);
 
 	private:
 		struct CWork
 		{
 			CReqParam m_request;
 			std::uint64_t m_instance{ 0 };
-			ITradeCounter::ReplyHandler m_handler;
+			ITradeSession::_TyReplyHandler m_handler;
 		};
 		struct CSession
 		{
 			_TyAccount m_account;
-			std::weak_ptr<CZhongTaiCounter> m_counter;
+			std::weak_ptr<CZhongTaiSession> m_counter;
 			std::uint64_t m_session{ 0 }, m_generation{ 0 }, m_instance{ 0 };
 			std::string m_password, m_site;
 			request::ZhongTaiJournal m_journal;
@@ -89,7 +90,8 @@ namespace trade::zhongtai
 		std::thread m_worker;
 		std::thread::id m_workerId;
 		std::mutex m_mtx_counters;
-		std::map<_TyAccount, std::weak_ptr<CZhongTaiCounter>> m_counters;
+		std::map<_TyAccount, std::uint64_t> m_instances;
+		std::map<_TyAccount, std::weak_ptr<CZhongTaiSession>> m_counters;
 		std::uint64_t m_nextInstance{ 0 };
 	};
 } // namespace trade::zhongtai

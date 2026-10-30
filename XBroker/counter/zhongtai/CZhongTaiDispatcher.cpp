@@ -1,4 +1,4 @@
-#include "CZhongTaiGateway.h"
+#include "CZhongTaiDispatcher.h"
 #include "ZhongTaiConvert.h"
 #include "../TradeProtocol.h"
 #include <algorithm>
@@ -15,7 +15,8 @@ namespace trade::zhongtai
 		{
 			return Status::Filled == status || Status::Cancelled == status || Status::Expired == status || Status::Rejected == status;
 		}
-		void Invoke(ITradeCounter::ReplyHandler& handler, const CCounterReply& reply)
+
+		void Invoke(ITradeSession::_TyReplyHandler& handler, const CCounterReply& reply)
 		{
 			if (nullptr != handler)
 			{
@@ -29,24 +30,26 @@ namespace trade::zhongtai
 			}
 		}
 	} // namespace
-	CZhongTaiGateway::CZhongTaiGateway(CConfig config, std::unique_ptr<IZhongTaiApi> api, std::unique_ptr<IZhongTaiStore> store) : m_config(std::move(config)), m_api(std::move(api)), m_store(std::move(store))
+	CZhongTaiDispatcher::CZhongTaiDispatcher(CConfig config, std::unique_ptr<IZhongTaiApi> api, std::unique_ptr<IZhongTaiStore> store) : m_config(std::move(config)), m_api(std::move(api)), m_store(std::move(store))
 	{
 	}
-	CZhongTaiGateway::~CZhongTaiGateway()
+	CZhongTaiDispatcher::~CZhongTaiDispatcher()
 	{
 		Stop();
 	}
-	void CZhongTaiGateway::Start()
+
+	void CZhongTaiDispatcher::Start()
 	{
 		if (nullptr == m_api || nullptr == m_store || m_worker.joinable())
 		{
 			throw std::runtime_error("invalid XTP gateway initialization");
 		}
-		m_api->SetHandler(std::bind_front(&CZhongTaiGateway::Receive, this));
-		m_worker = std::thread(std::bind_front(&CZhongTaiGateway::Run, this));
+		m_api->SetHandler(std::bind_front(&CZhongTaiDispatcher::Receive, this));
+		m_worker = std::thread(std::bind_front(&CZhongTaiDispatcher::Run, this));
 		m_workerId = m_worker.get_id();
 	}
-	void CZhongTaiGateway::Stop()
+
+	void CZhongTaiDispatcher::Stop()
 	{
 		{
 			std::lock_guard<std::mutex> lock(m_mtx_queue);
@@ -67,15 +70,38 @@ namespace trade::zhongtai
 			m_api->Stop();
 		}
 	}
-	std::shared_ptr<ITradeCounter> CZhongTaiGateway::Create(const CCounterConfig& config)
+
+	std::shared_ptr<ITradeSession> CZhongTaiDispatcher::Create(const CCounterConfig& config)
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_counters);
-		std::shared_ptr<CZhongTaiCounter> counter = std::make_shared<CZhongTaiCounter>(shared_from_this(), config.m_accountIndex, ++m_nextInstance);
+		std::shared_ptr<CZhongTaiSession> counter = std::make_shared<CZhongTaiSession>(shared_from_this(), config.m_accountIndex, ++m_nextInstance);
+		const auto previous = m_counters.find(config.m_accountIndex);
+		if (m_counters.end() != previous)
+		{
+			std::shared_ptr<CZhongTaiSession> retired = previous->second.lock();
+			if (nullptr != retired)
+			{
+				retired->Close();
+			}
+		}
 		m_counters.insert_or_assign(config.m_accountIndex, counter);
+		m_instances.insert_or_assign(config.m_accountIndex, m_nextInstance);
 		return counter;
 	}
-	CResult CZhongTaiGateway::Send(CReqParam request, ITradeCounter::ReplyHandler handler, std::uint64_t instance)
+
+	bool CZhongTaiDispatcher::IsCurrent(const _TyAccount& account, std::uint64_t instance)
 	{
+		std::lock_guard<std::mutex> lock(m_mtx_counters);
+		const auto mIter = m_instances.find(account);
+		return m_instances.end() != mIter && instance == mIter->second;
+	}
+
+	CResult CZhongTaiDispatcher::Send(CReqParam request, ITradeSession::_TyReplyHandler handler, std::uint64_t instance)
+	{
+		if (!IsCurrent(request.m_accountIndex, instance))
+		{
+			return { Error::Unavailable, "retired account session" };
+		}
 		std::lock_guard<std::mutex> lock(m_mtx_queue);
 		if (m_stopping || m_config.m_queueLimit <= m_queue.size())
 		{
@@ -96,7 +122,8 @@ namespace trade::zhongtai
 		m_condition.notify_one();
 		return {};
 	}
-	void CZhongTaiGateway::Receive(CApiEvent event)
+
+	void CZhongTaiDispatcher::Receive(CApiEvent event)
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_queue);
 		if (m_stopping)
@@ -113,7 +140,8 @@ namespace trade::zhongtai
 		}
 		m_condition.notify_one();
 	}
-	void CZhongTaiGateway::Snapshot(CSession& session)
+
+	void CZhongTaiDispatcher::Snapshot(CSession& session)
 	{
 		session.m_snapshot.m_orders.clear();
 		session.m_snapshot.m_trades.clear();
@@ -135,13 +163,14 @@ namespace trade::zhongtai
 		session.m_snapshot.m_version = session.m_journal.sequence();
 		session.m_snapshot.m_nTime = Now();
 		session.m_snapshot.m_account.m_accountIndex = session.m_account;
-		std::shared_ptr<CZhongTaiCounter> counter = session.m_counter.lock();
+		std::shared_ptr<CZhongTaiSession> counter = session.m_counter.lock();
 		if (nullptr != counter)
 		{
 			counter->SetSnapshot(session.m_snapshot);
 		}
 	}
-	bool CZhongTaiGateway::Persist(CSession& session)
+
+	bool CZhongTaiDispatcher::Persist(CSession& session)
 	{
 		session.m_journal.clear_orders();
 		session.m_journal.clear_trades();
@@ -167,7 +196,7 @@ namespace trade::zhongtai
 			invalid.m_kind = EventTy::Session;
 			invalid.m_account = session.m_snapshot.m_account;
 			invalid.m_sequence = 0;
-			std::shared_ptr<CZhongTaiCounter> counter = session.m_counter.lock();
+			std::shared_ptr<CZhongTaiSession> counter = session.m_counter.lock();
 			if (nullptr != counter && session.m_published)
 			{
 				counter->Publish(invalid);
@@ -176,7 +205,8 @@ namespace trade::zhongtai
 		}
 		return true;
 	}
-	void CZhongTaiGateway::Publish(CSession& session, CCountEvent event)
+
+	void CZhongTaiDispatcher::Publish(CSession& session, CCountEvent event)
 	{
 		event.m_accountIndex = session.m_account;
 		event.m_account = session.m_snapshot.m_account;
@@ -194,13 +224,14 @@ namespace trade::zhongtai
 			session.m_initialEvents.emplace_back(std::move(event));
 			return;
 		}
-		std::shared_ptr<CZhongTaiCounter> counter = session.m_counter.lock();
+		std::shared_ptr<CZhongTaiSession> counter = session.m_counter.lock();
 		if (nullptr != counter)
 		{
 			counter->Publish(event);
 		}
 	}
-	void CZhongTaiGateway::Reply(CSession& session, CWork& work, const CResult& result, std::uint64_t orderId)
+
+	void CZhongTaiDispatcher::Reply(CSession& session, CWork& work, const CResult& result, std::uint64_t orderId)
 	{
 		CCounterReply reply;
 		reply.m_accountIndex = session.m_account;
@@ -229,7 +260,8 @@ namespace trade::zhongtai
 		}
 		Invoke(work.m_handler, reply);
 	}
-	void CZhongTaiGateway::Fail(CSession& session, const CResult& result, bool disable)
+
+	void CZhongTaiDispatcher::Fail(CSession& session, const CResult& result, bool disable)
 	{
 		if (session.m_login.has_value())
 		{
@@ -285,7 +317,7 @@ namespace trade::zhongtai
 				event.m_account = session.m_snapshot.m_account;
 				event.m_accountIndex = session.m_account;
 				event.m_sequence = 0;
-				std::shared_ptr<CZhongTaiCounter> counter = session.m_counter.lock();
+				std::shared_ptr<CZhongTaiSession> counter = session.m_counter.lock();
 				if (nullptr != counter)
 				{
 					counter->Publish(event);
@@ -297,7 +329,8 @@ namespace trade::zhongtai
 			m_store->Release(session.m_account);
 		}
 	}
-	void CZhongTaiGateway::Login(CSession& session)
+
+	void CZhongTaiDispatcher::Login(CSession& session)
 	{
 		const auto vIter = std::find_if(m_config.m_sites.begin(), m_config.m_sites.end(), [&session](const CSite& site)
 		{
@@ -357,11 +390,22 @@ namespace trade::zhongtai
 			Publish(session, std::move(event));
 		}
 	}
-	void CZhongTaiGateway::Handle(CWork work)
+
+	void CZhongTaiDispatcher::Handle(CWork work)
 	{
 		const _TyAccount& account = work.m_request.m_accountIndex;
 		const auto mIter = m_sessions.find(account);
 		Operation operation = work.m_request.GetOperation();
+		if (!IsCurrent(account, work.m_instance))
+		{
+			CCounterReply reply;
+			reply.m_accountIndex = account;
+			reply.m_requestId = work.m_request.m_requestId;
+			reply.m_operation = operation;
+			reply.m_result = { Error::Unavailable, "retired account session" };
+			Invoke(work.m_handler, reply);
+			return;
+		}
 		if (Operation::Login == operation)
 		{
 			if (m_sessions.end() != mIter && (mIter->second.m_login.has_value() || 0 != mIter->second.m_session))
@@ -606,7 +650,8 @@ namespace trade::zhongtai
 		}
 		session.m_queries.emplace_back(std::move(work));
 	}
-	void CZhongTaiGateway::Apply(CSession& session, const CApiEvent& event)
+
+	void CZhongTaiDispatcher::Apply(CSession& session, const CApiEvent& event)
 	{
 		if (!event.m_hasRow)
 		{
@@ -747,7 +792,8 @@ namespace trade::zhongtai
 			Publish(session, std::move(output));
 		}
 	}
-	void CZhongTaiGateway::Query(CSession& session, Operation operation, bool sync, std::optional<CWork> work)
+
+	void CZhongTaiDispatcher::Query(CSession& session, Operation operation, bool sync, std::optional<CWork> work)
 	{
 		if (std::numeric_limits<int>::max() == m_nextQuery)
 		{
@@ -775,7 +821,8 @@ namespace trade::zhongtai
 			Fail(session, result);
 		}
 	}
-	void CZhongTaiGateway::FinishQuery()
+
+	void CZhongTaiDispatcher::FinishQuery()
 	{
 		CQuery query = std::move(*m_query);
 		m_query.reset();
@@ -886,7 +933,7 @@ namespace trade::zhongtai
 						session.m_login.reset();
 					}
 					session.m_published = true;
-					std::shared_ptr<CZhongTaiCounter> counter = session.m_counter.lock();
+					std::shared_ptr<CZhongTaiSession> counter = session.m_counter.lock();
 					if (nullptr != counter)
 					{
 						for (const auto& event : session.m_initialEvents)
@@ -916,7 +963,8 @@ namespace trade::zhongtai
 			Fail(session, result, true);
 		}
 	}
-	void CZhongTaiGateway::Handle(CApiEvent event)
+
+	void CZhongTaiDispatcher::Handle(CApiEvent event)
 	{
 		if (ApiEventType::Error == event.m_type && 0 == event.m_session)
 		{
@@ -1018,7 +1066,8 @@ namespace trade::zhongtai
 		Apply(session, event);
 		Snapshot(session);
 	}
-	void CZhongTaiGateway::Tick()
+
+	void CZhongTaiDispatcher::Tick()
 	{
 		std::int64_t now = Now();
 		if (m_overflow.exchange(false))
@@ -1117,7 +1166,7 @@ namespace trade::zhongtai
 		}
 	}
 
-	void CZhongTaiGateway::Run()
+	void CZhongTaiDispatcher::Run()
 	{
 		for (;;)
 		{
@@ -1140,7 +1189,7 @@ namespace trade::zhongtai
 					break;
 				}
 			}
-			ITradeCounter::ReplyHandler fallback;
+			ITradeSession::_TyReplyHandler fallback;
 			CCounterReply failure;
 			if (work.has_value())
 			{

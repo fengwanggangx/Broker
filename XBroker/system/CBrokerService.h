@@ -28,6 +28,8 @@ private:
 	void Broadcast(const CRequest& push);
 	int OnNetEvent(const net::CNetEvent& event);
 
+	trade::CResult InitializeCounters();
+
 private:
 	CTradeService m_trader;
 	std::string m_strToken;

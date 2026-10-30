@@ -1,10 +1,10 @@
-#include "CSimulatedCounter.h"
+#include "CSimulatedDispatcher.h"
 #include "../system/CSession.h"
 #include "../common/utility.h"
 #include "../request/request.pb.h"
 #include "../request/RequestCenter.h"
 
-void CSimulatedCounter::OnMarketResponse(const CRequest& request)
+void CSimulatedDispatcher::OnMarketResponse(const CRequest& request)
 {
 	if (!request.GetData().has_depth())
 	{
@@ -43,12 +43,12 @@ void CSimulatedCounter::OnMarketResponse(const CRequest& request)
 	OnDepth(std::move(depth));
 }
 
-void CSimulatedCounter::OnSessionState(SessionState state, const std::string&)
+void CSimulatedDispatcher::OnSessionState(SessionState state, const std::string&)
 {
 	OnMarketState(SessionState::Ready == state);
 }
 
-bool CSimulatedCounter::ChangeDepthSubscription(CSession& session, const std::string& security, bool subscribe)
+bool CSimulatedDispatcher::ChangeDepthSubscription(CSession& session, const std::string& security, bool subscribe)
 {
 	std::size_t dot = security.rfind('.');
 	if (std::string::npos == dot)

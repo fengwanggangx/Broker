@@ -34,10 +34,10 @@ static trade::_TyRequestParam MakeParams(trade::Operation operation)
 	throw std::runtime_error("invalid operation");
 }
 
-class CDeferredBroker final : public trade::ITradeCounter
+class CDeferredBroker final : public trade::ITradeSession
 {
 public:
-	trade::CResult SendRequest(trade::CReqParam request, ReplyHandler handler) override
+	trade::CResult SendRequest(trade::CReqParam request, _TyReplyHandler handler) override
 	{
 		m_work.emplace_back([this, request = std::move(request), handler = std::move(handler)]()
 		{
@@ -61,6 +61,7 @@ public:
 		});
 		return {};
 	}
+
 	void Drain()
 	{
 		while (!m_work.empty())
@@ -70,22 +71,22 @@ public:
 			work();
 		}
 	}
-	void SetEventHandler(EventHandler handler) override
+	void SetEventHandler(_TyEventHandler handler) override
 	{
 		m_handler = std::move(handler);
 	}
-	trade::CAccountData Snapshot(const _TyAccount&) const override
+	trade::CAccountData Snapshot() const override
 	{
 		return {};
 	}
-	void Stop() override
+	void Close() override
 	{
 		Drain();
 	}
 
 private:
 	std::deque<std::function<void()>> m_work;
-	EventHandler m_handler;
+	_TyEventHandler m_handler;
 };
 int main()
 {
@@ -99,7 +100,7 @@ int main()
 	{
 		return 1;
 	}
-	std::shared_ptr<trade::ITradeCounter> gateway = registry.Create({ TestAccount(7), "fake" });
+	std::shared_ptr<trade::ITradeSession> gateway = registry.Create({ TestAccount(7), "fake" });
 	int nEvents = 0;
 	int nReplies = 0;
 	gateway->SetEventHandler([&nEvents](const trade::CCountEvent& event)
@@ -134,6 +135,6 @@ int main()
 	{
 		return 4;
 	}
-	gateway->Stop();
+	gateway->Close();
 	std::cout << "adapter contract passed\n";
 }

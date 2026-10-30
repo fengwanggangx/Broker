@@ -112,14 +112,14 @@ bool CTradeService::Initialize()
 
 void CTradeService::Stop()
 {
-	std::vector<std::shared_ptr<trade::ITradeCounter>> counters;
+	std::vector<std::shared_ptr<trade::ITradeSession>> counters;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		m_bStopping = true;
 		counters.swap(m_retired);
 		for (auto& item : m_accounts)
 		{
-			counters.emplace_back(item.second.m_counter);
+			counters.emplace_back(item.second.m_session);
 			item.second.m_info.m_state = TradeAccountState::Disconnected;
 		}
 		for (const auto& item : m_logging)
@@ -131,7 +131,7 @@ void CTradeService::Stop()
 	{
 		if (nullptr != counter)
 		{
-			counter->Stop();
+			counter->Close();
 		}
 	}
 	m_counterFactory.Stop();
@@ -160,14 +160,14 @@ bool CTradeService::HandleTradeRequest(const CRequest& req)
 
 bool CTradeService::DispatchRequest(const CRequest& req)
 {
-	std::vector<std::shared_ptr<trade::ITradeCounter>> counters;
+	std::vector<std::shared_ptr<trade::ITradeSession>> counters;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		counters.swap(m_retired);
 	}
 	for (const auto& counter : counters)
 	{
-		counter->Stop();
+		counter->Close();
 	}
 	const auto mIter = m_handler_request.find(req.GetType());
 	if (m_handler_request.end() == mIter)
@@ -251,7 +251,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		trade::protocol::WriteReply(reply, response);
 		return net::SendRequest(req.GetConnectionId(), response);
 	}
-	std::shared_ptr<trade::ITradeCounter> counter = m_counterFactory.Create({ account, broker->second.m_strAdapter });
+	std::shared_ptr<trade::ITradeSession> counter = m_counterFactory.Create({ account, broker->second.m_strAdapter });
 	if (nullptr == counter)
 	{
 		{
@@ -262,13 +262,13 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		return false;
 	}
 	{
-		std::weak_ptr<trade::ITradeCounter> weak = counter;
+		std::weak_ptr<trade::ITradeSession> weak = counter;
 		counter->SetEventHandler([this, account, weak](const trade::CCountEvent& event)
 		{
 			{
 				std::lock_guard<std::mutex> lock(m_mtx_accounts);
 				const auto current = m_accounts.find(account);
-				if (m_accounts.end() == current || current->second.m_counter != weak.lock() || account != event.m_accountIndex)
+				if (m_accounts.end() == current || current->second.m_session != weak.lock() || account != event.m_accountIndex)
 				{
 					return;
 				}
@@ -291,7 +291,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 	}
 	if (bStopping)
 	{
-		counter->Stop();
+		counter->Close();
 		net::SendError(req.GetConnectionId(), req, 2, "Service stopping");
 		return false;
 	}
@@ -320,7 +320,7 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 		{
 			std::lock_guard<std::mutex> lock(m_mtx_accounts);
 			const auto pending = m_logging.find(account);
-			std::shared_ptr<trade::ITradeCounter> counter = m_logging.end() == pending ? nullptr : pending->second;
+			std::shared_ptr<trade::ITradeSession> counter = m_logging.end() == pending ? nullptr : pending->second;
 			m_logging.erase(account);
 			if (m_bStopping)
 			{
@@ -329,9 +329,9 @@ bool CTradeService::HandleAccountLogin(const CRequest& req)
 			if (nullptr != counter && !m_bStopping && result.Ok())
 			{
 				const auto old = m_accounts.find(account);
-				if (m_accounts.end() != old && old->second.m_counter != counter)
+				if (m_accounts.end() != old && old->second.m_session != counter)
 				{
-					m_retired.emplace_back(old->second.m_counter);
+					m_retired.emplace_back(old->second.m_session);
 				}
 				m_accounts.insert_or_assign(account, CTradeAccount{ info, counter });
 			}
@@ -450,20 +450,20 @@ bool CTradeService::HandleDealQuery(const CRequest& req)
 	return SendRequest(req, std::move(param));
 }
 
-std::shared_ptr<trade::ITradeCounter> CTradeService::FindCounter(const CRequest& req, _TyAccount& account) const
+std::shared_ptr<trade::ITradeSession> CTradeService::FindCounter(const CRequest& req, _TyAccount& account) const
 {
 	if (!ReadAccountIdentity(req, account))
 	{
 		net::SendError(req.GetConnectionId(), req, 1202, "broker_id/account required");
 		return nullptr;
 	}
-	std::shared_ptr<trade::ITradeCounter> counter;
+	std::shared_ptr<trade::ITradeSession> counter;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_accounts);
 		const auto mIter = m_accounts.find(account);
 		if (m_accounts.end() != mIter && TradeAccountState::Connected == mIter->second.m_info.m_state)
 		{
-			counter = mIter->second.m_counter;
+			counter = mIter->second.m_session;
 		}
 	}
 	if (nullptr == counter)
@@ -476,7 +476,7 @@ std::shared_ptr<trade::ITradeCounter> CTradeService::FindCounter(const CRequest&
 bool CTradeService::SendRequest(const CRequest& req, trade::CReqParam&& param)
 {
 	param.m_requestId = SourceId(req);
-	std::shared_ptr<trade::ITradeCounter> counter = FindCounter(req, param.m_accountIndex);
+	std::shared_ptr<trade::ITradeSession> counter = FindCounter(req, param.m_accountIndex);
 	if (nullptr == counter)
 	{
 		return false;
@@ -488,8 +488,21 @@ bool CTradeService::SendRequest(const CRequest& req, trade::CReqParam&& param)
 	net::_TyConnectionId connection = req.GetConnectionId();
 	std::uint64_t requestId = req.GetId();
 	_TyRequest type = req.GetType();
-	trade::CResult queued = counter->SendRequest(std::move(param), [connection, requestId, type](const trade::CCounterReply& reply)
+	_TyAccount account = param.m_accountIndex;
+	trade::CResult queued = counter->SendRequest(std::move(param), [this, counter, account, connection, requestId, type](const trade::CCounterReply& reply)
 	{
+		if (_TyRequest::TRADE_ACCOUNT_DISCONNECT == type && reply.m_result.Ok())
+		{
+			{
+				std::lock_guard<std::mutex> lock(m_mtx_accounts);
+				const auto mIter = m_accounts.find(account);
+				if (m_accounts.end() != mIter && counter == mIter->second.m_session)
+				{
+					mIter->second.m_info.m_state = TradeAccountState::Disconnected;
+				}
+			}
+			counter->Close();
+		}
 		CRequest response;
 		response.SetId(requestId);
 		response.SetType(type);

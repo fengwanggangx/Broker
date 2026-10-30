@@ -1,5 +1,6 @@
 #pragma once
 #include "CSimulatedCore.h"
+#include "CounterConfig.h"
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -11,21 +12,24 @@ class CRequest;
 class CSession;
 enum class SessionState;
 
-class CSimulatedCounter final : public trade::ITradeCounter, public trade::IMarketInput
+class CSimulatedDispatcher final : public trade::IMarketInput, public std::enable_shared_from_this<CSimulatedDispatcher>
 {
 public:
 	using _TyClock = std::function<std::int64_t()>;
 	using _TyDepthSubscriptionHandler = std::function<bool(const std::string&, bool)>;
 
-	static CSimulatedCounter& InstanceRef();
+	CSimulatedDispatcher() = default;
+	~CSimulatedDispatcher() override;
+	using _TyReplyHandler = trade::ITradeSession::_TyReplyHandler;
+	std::shared_ptr<trade::ITradeSession> Create(const trade::CCounterConfig& config);
+	bool IsCurrent(const _TyAccount& account, std::uint64_t instance) const;
 
 	trade::CResult Start(const std::vector<trade::CAccount>& accounts, const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar);
 	trade::CResult Start(std::unique_ptr<trade::ICounterStore> store, _TyClock&& clock, const std::vector<trade::CAccount>& accounts, const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar);
-	void Stop() override;
+	void Stop();
 
-	void SetEventHandler(EventHandler handler) override;
-	trade::CResult SendRequest(trade::CReqParam request, ReplyHandler handler) override;
-	trade::CAccountData Snapshot(const _TyAccount& accountIndex) const override;
+	trade::CResult Send(trade::CReqParam request, _TyReplyHandler handler, std::uint64_t instance);
+	trade::CAccountData Snapshot(const _TyAccount& accountIndex) const;
 
 	void OnDepth(trade::CDepth depth) override;
 	void OnMarketState(bool bAvailable) override;
@@ -36,18 +40,23 @@ public:
 	bool ChangeDepthSubscription(CSession& session, const std::string& security, bool subscribe);
 
 private:
-	CSimulatedCounter() = default;
-	~CSimulatedCounter() override;
-	CSimulatedCounter(CSimulatedCounter&&) = delete;
-	CSimulatedCounter(const CSimulatedCounter& arg) = delete;
-	CSimulatedCounter& operator=(const CSimulatedCounter& arg) = delete;
-	CSimulatedCounter& operator=(CSimulatedCounter&&) = delete;
+	CSimulatedDispatcher(CSimulatedDispatcher&&) = delete;
+	CSimulatedDispatcher(const CSimulatedDispatcher& arg) = delete;
+	CSimulatedDispatcher& operator=(const CSimulatedDispatcher& arg) = delete;
+	CSimulatedDispatcher& operator=(CSimulatedDispatcher&&) = delete;
 
 	void Run();
-	void Refresh();
+	void Refresh(const _TyAccount& account = {}, std::uint64_t instance = 0);
 	void UpdateDepthDemand(const trade::COrder& order);
 	void SyncDepthSubscriptions(bool stopping = false);
 
+	struct CSessionSlot
+	{
+		std::uint64_t m_instance{ 0 };
+		std::weak_ptr<class CSimulatedSession> m_session;
+	};
+	std::map<_TyAccount, CSessionSlot> m_sessions;
+	std::uint64_t m_nextInstance{ 0 };
 	std::mutex m_mtx_lifecycle;
 	std::unique_ptr<CSimulatedCore> m_counter;
 	_TyClock m_clock;
@@ -57,7 +66,6 @@ private:
 	std::map<_TyAccount, trade::CAccountData> m_snapshots;
 	std::uint64_t m_version{ 0 };
 	bool m_bReady{ false };
-	EventHandler m_handler_request;
 	std::uint64_t m_delivered{ 0 };
 	std::atomic_bool m_bInputAvailable{ false };
 	std::atomic_uint64_t m_epoch{ 0 };

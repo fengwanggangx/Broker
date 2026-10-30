@@ -1,5 +1,5 @@
 #include "ZhongTaiSetup.h"
-#include "CZhongTaiGateway.h"
+#include "CZhongTaiDispatcher.h"
 #include "../../ini/CINIHandler.h"
 #include "../../common/utility.h"
 #include <rapidjson/document.h>
@@ -98,9 +98,9 @@ namespace trade::zhongtai
 			}
 			std::filesystem::create_directories(config.m_logPath);
 			std::unique_ptr<IZhongTaiApi> api = CreateZhongTaiApi(config);
-			std::shared_ptr<CZhongTaiGateway> gateway = std::make_shared<CZhongTaiGateway>(config, std::move(api), std::make_unique<CZhongTaiStore>(utility::MakeSaltHex()));
+			std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CZhongTaiStore>(utility::MakeSaltHex()));
 			gateway->Start();
-			if (!factory.Register("zhongtai_xtp", std::bind_front(&CZhongTaiGateway::Create, gateway), std::bind_front(&CZhongTaiGateway::Stop, gateway)))
+			if (!factory.Register("zhongtai_xtp", std::bind_front(&CZhongTaiDispatcher::Create, gateway), std::bind_front(&CZhongTaiDispatcher::Stop, gateway)))
 			{
 				gateway->Stop();
 				return { Error::Conflict, "duplicate ZhongTai registration" };

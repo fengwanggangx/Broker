@@ -1,19 +1,40 @@
-#include "CSimulatedCounter.h"
+#include "CSimulatedDispatcher.h"
+#include "CSimulatedSession.h"
 #include <algorithm>
 #include <unordered_map>
 #include "../common/container.h"
-CSimulatedCounter& CSimulatedCounter::InstanceRef()
+std::shared_ptr<trade::ITradeSession> CSimulatedDispatcher::Create(const trade::CCounterConfig& config)
 {
-	static CSimulatedCounter instance;
-	return instance;
+	const _TyAccount& account = config.m_accountIndex;
+	std::lock_guard<std::mutex> lock(m_mtx_state);
+	std::uint64_t instance = ++m_nextInstance;
+	std::shared_ptr<CSimulatedSession> session = std::make_shared<CSimulatedSession>(shared_from_this(), account, instance);
+	const auto previous = m_sessions.find(account);
+	if (m_sessions.end() != previous)
+	{
+		std::shared_ptr<CSimulatedSession> retired = previous->second.m_session.lock();
+		if (nullptr != retired)
+		{
+			retired->Close();
+		}
+	}
+	m_sessions.insert_or_assign(account, CSessionSlot{ instance, session });
+	return session;
 }
 
-CSimulatedCounter::~CSimulatedCounter()
+bool CSimulatedDispatcher::IsCurrent(const _TyAccount& account, std::uint64_t instance) const
+{
+	std::lock_guard<std::mutex> lock(m_mtx_state);
+	const auto mIter = m_sessions.find(account);
+	return !m_bStopping && m_sessions.end() != mIter && instance == mIter->second.m_instance && !mIter->second.m_session.expired();
+}
+
+CSimulatedDispatcher::~CSimulatedDispatcher()
 {
 	Stop();
 }
 
-trade::CResult CSimulatedCounter::Start(std::unique_ptr<trade::ICounterStore> store, _TyClock&& clock, const std::vector<trade::CAccount>& accounts, const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar)
+trade::CResult CSimulatedDispatcher::Start(std::unique_ptr<trade::ICounterStore> store, _TyClock&& clock, const std::vector<trade::CAccount>& accounts, const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar)
 {
 	std::lock_guard<std::mutex> lifecycleLock(m_mtx_lifecycle);
 	if (m_worker.joinable())
@@ -87,9 +108,14 @@ trade::CResult CSimulatedCounter::Start(std::unique_ptr<trade::ICounterStore> st
 	return {};
 }
 
-trade::CResult CSimulatedCounter::SendRequest(trade::CReqParam request, ReplyHandler handler)
+trade::CResult CSimulatedDispatcher::Send(trade::CReqParam request, _TyReplyHandler handler, std::uint64_t instance)
 {
 	std::lock_guard<std::mutex> lock(m_mtx_state);
+	const auto session = m_sessions.find(request.m_accountIndex);
+	if (m_sessions.end() == session || instance != session->second.m_instance)
+	{
+		return { trade::Error::Unavailable, "retired account session" };
+	}
 	if (!IsAccountValid(request.m_accountIndex) || !m_snapshots.contains(request.m_accountIndex))
 	{
 		return { trade::Error::NotFound, "account not found" };
@@ -102,10 +128,30 @@ trade::CResult CSimulatedCounter::SendRequest(trade::CReqParam request, ReplyHan
 	{
 		return { trade::Error::Unavailable, "gateway queue full" };
 	}
-	m_work.emplace_back([this, request = std::move(request), handler = std::move(handler)]()
+	m_work.emplace_back([this, instance, request = std::move(request), handler = std::move(handler)]()
 	{
-		trade::CCounterReply reply = m_counter->Execute(request, m_clock());
-		Refresh();
+		trade::CCounterReply reply;
+		reply.m_accountIndex = request.m_accountIndex;
+		reply.m_requestId = request.m_requestId;
+		reply.m_operation = request.GetOperation();
+		try
+		{
+			if (!IsCurrent(request.m_accountIndex, instance))
+			{
+				reply.m_result = { trade::Error::Unavailable, "retired account session" };
+			}
+			else
+			{
+				reply = m_counter->Execute(request, m_clock());
+				Refresh(request.m_accountIndex, instance);
+			}
+		}
+		catch (...)
+		{
+			reply.m_result = { trade::Error::UnknownResult, "simulated execution failed; reconcile before retry" };
+			m_counter->Stop();
+		}
+
 		// Consumers must allow events before the reply, as a broker adapter may do the same.
 		if (nullptr != handler)
 		{
@@ -122,7 +168,7 @@ trade::CResult CSimulatedCounter::SendRequest(trade::CReqParam request, ReplyHan
 	return {};
 }
 
-void CSimulatedCounter::Refresh()
+void CSimulatedDispatcher::Refresh(const _TyAccount& account, std::uint64_t instance)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
@@ -143,7 +189,6 @@ void CSimulatedCounter::Refresh()
 			UpdateDepthDemand(event.m_order);
 		}
 	}
-	EventHandler handler;
 	{
 		std::lock_guard<std::mutex> lock(m_mtx_state);
 		m_bReady = m_counter->Ready();
@@ -165,25 +210,33 @@ void CSimulatedCounter::Refresh()
 			item.second.m_bReady = m_bReady;
 			item.second.m_version = m_version;
 		}
-		handler = m_handler_request;
 	}
 	for (const auto& event : events)
 	{
-		if (nullptr != handler)
+		std::shared_ptr<CSimulatedSession> session;
+		{
+			std::lock_guard<std::mutex> lock(m_mtx_state);
+			const auto mIter = m_sessions.find(event.m_accountIndex);
+			if (m_sessions.end() != mIter && (0 == instance || account != event.m_accountIndex || instance == mIter->second.m_instance))
+			{
+				session = mIter->second.m_session.lock();
+			}
+		}
+		if (nullptr != session)
 		{
 			try
 			{
-				handler(event);
+				session->Publish(event);
 			}
 			catch (...)
-			{ /* Persisted events remain replayable. */
+			{
 			}
 		}
 		m_delivered = event.m_sequence;
 	}
 }
 
-void CSimulatedCounter::Run()
+void CSimulatedDispatcher::Run()
 {
 	std::int64_t nLastRenew = m_clock();
 	for (;;)
@@ -242,13 +295,7 @@ void CSimulatedCounter::Run()
 	Refresh();
 }
 
-void CSimulatedCounter::SetEventHandler(EventHandler handler)
-{
-	std::lock_guard<std::mutex> lock(m_mtx_state);
-	m_handler_request = std::move(handler);
-}
-
-trade::CAccountData CSimulatedCounter::Snapshot(const _TyAccount& accountIndex) const
+trade::CAccountData CSimulatedDispatcher::Snapshot(const _TyAccount& accountIndex) const
 {
 	std::lock_guard<std::mutex> lock(m_mtx_state);
 	auto iter = m_snapshots.find(accountIndex);
@@ -261,7 +308,7 @@ trade::CAccountData CSimulatedCounter::Snapshot(const _TyAccount& accountIndex) 
 	return iter->second;
 }
 
-void CSimulatedCounter::OnDepth(trade::CDepth depth)
+void CSimulatedDispatcher::OnDepth(trade::CDepth depth)
 {
 	std::lock_guard<std::mutex> lock(m_mtx_state);
 	if (m_bStopping || (4096 <= m_work.size()))
@@ -280,7 +327,7 @@ void CSimulatedCounter::OnDepth(trade::CDepth depth)
 	m_condition.notify_one();
 }
 
-void CSimulatedCounter::OnMarketState(bool bAvailable)
+void CSimulatedDispatcher::OnMarketState(bool bAvailable)
 {
 	if (m_bInputAvailable.exchange(bAvailable) != bAvailable)
 	{
@@ -289,7 +336,7 @@ void CSimulatedCounter::OnMarketState(bool bAvailable)
 	m_condition.notify_one();
 }
 
-void CSimulatedCounter::Stop()
+void CSimulatedDispatcher::Stop()
 {
 	std::lock_guard<std::mutex> lifecycleLock(m_mtx_lifecycle);
 	{
@@ -309,7 +356,7 @@ void CSimulatedCounter::Stop()
 	}
 	m_work.clear();
 	m_snapshots.clear();
-	m_handler_request = {};
+	m_sessions.clear();
 	m_handler_depthSubscription = {};
 	m_activeOrders.clear();
 	m_depthReferences.clear();
@@ -324,14 +371,14 @@ void CSimulatedCounter::Stop()
 	m_delivered = 0;
 }
 
-void CSimulatedCounter::SetDepthSubscriptionHandler(_TyDepthSubscriptionHandler&& handler)
+void CSimulatedDispatcher::SetDepthSubscriptionHandler(_TyDepthSubscriptionHandler&& handler)
 {
 	std::lock_guard<std::mutex> lock(m_mtx_state);
 	m_handler_depthSubscription = std::move(handler);
 	m_condition.notify_one();
 }
 
-void CSimulatedCounter::UpdateDepthDemand(const trade::COrder& order)
+void CSimulatedDispatcher::UpdateDepthDemand(const trade::COrder& order)
 {
 	const auto mIter = m_activeOrders.find(order.m_orderId);
 	if (trade::Status::Accepted == order.m_status || trade::Status::PartiallyFilled == order.m_status)
@@ -355,7 +402,7 @@ void CSimulatedCounter::UpdateDepthDemand(const trade::COrder& order)
 	}
 }
 
-void CSimulatedCounter::SyncDepthSubscriptions(bool stopping)
+void CSimulatedDispatcher::SyncDepthSubscriptions(bool stopping)
 {
 	std::uint64_t epoch = m_epoch.load();
 	if (epoch != m_subscriptionEpoch || !m_bInputAvailable.load())

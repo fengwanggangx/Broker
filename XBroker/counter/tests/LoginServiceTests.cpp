@@ -5,28 +5,28 @@
 
 class CLoginServiceTests
 {
-	class CFake final : public trade::ITradeCounter
+	class CFake final : public trade::ITradeSession
 	{
 	public:
-		trade::CResult SendRequest(trade::CReqParam request, ReplyHandler handler) override
+		trade::CResult SendRequest(trade::CReqParam request, _TyReplyHandler handler) override
 		{
 			m_pending.emplace_back(std::move(request), std::move(handler));
 			return {};
 		}
 
-		void SetEventHandler(EventHandler handler) override
+		void SetEventHandler(_TyEventHandler handler) override
 		{
 			m_events = std::move(handler);
 		}
 
-		trade::CAccountData Snapshot(const _TyAccount&) const override
+		trade::CAccountData Snapshot() const override
 		{
 			return {};
 		}
 
 		void Complete(bool success)
 		{
-			std::pair<trade::CReqParam, ReplyHandler> work = std::move(m_pending.front());
+			std::pair<trade::CReqParam, _TyReplyHandler> work = std::move(m_pending.front());
 			m_pending.pop_front();
 			trade::CCounterReply reply;
 			reply.m_accountIndex = work.first.m_accountIndex;
@@ -47,8 +47,14 @@ class CLoginServiceTests
 			m_events(event);
 		}
 
-		void Stop() override
+		bool IsClosed() const
 		{
+			return m_closed;
+		}
+
+		void Close() override
+		{
+			m_closed = true;
 			while (!m_pending.empty())
 			{
 				Complete(false);
@@ -56,8 +62,9 @@ class CLoginServiceTests
 		}
 
 	private:
-		std::deque<std::pair<trade::CReqParam, ReplyHandler>> m_pending;
-		EventHandler m_events;
+		bool m_closed{ false };
+		std::deque<std::pair<trade::CReqParam, _TyReplyHandler>> m_pending;
+		_TyEventHandler m_events;
 	};
 
 	static void Check(bool value, const char* message)
@@ -106,6 +113,18 @@ public:
 		sessions.back()->Complete(true);
 		sessions[1]->Emit(account, false);
 		Check(TradeAccountState::Connected == service.m_accounts.at(account).m_info.m_state, "old session event ignored");
+		CRequest disconnect;
+		disconnect.SetType(_TyRequest::TRADE_ACCOUNT_DISCONNECT);
+		WriteAccountIdentity(account, disconnect);
+		Check(service.HandleAccountRequest(disconnect), "disconnect queued");
+		sessions.back()->Complete(false);
+		Check(!sessions.back()->IsClosed() && TradeAccountState::Connected == service.m_accounts.at(account).m_info.m_state, "failed disconnect preserves session");
+		Check(service.HandleAccountRequest(disconnect), "disconnect retry queued");
+		sessions.back()->Complete(true);
+		Check(sessions.back()->IsClosed() && TradeAccountState::Disconnected == service.m_accounts.at(account).m_info.m_state, "confirmed disconnect closes session");
+		Check(service.HandleAccountRequest(login), "explicitly closed account can login again");
+		sessions.back()->Complete(true);
+		Check(!sessions.back()->IsClosed(), "relogin uses a fresh session");
 		service.Stop();
 	}
 };

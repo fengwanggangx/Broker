@@ -1,5 +1,6 @@
 #pragma once
-#include "../counter/ITradeCounter.h"
+#include "../counter/ITradeSession.h"
+#include "../counter/CounterConfig.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -7,17 +8,12 @@
 #include <unordered_map>
 namespace trade
 {
-	struct CCounterConfig
-	{
-		_TyAccount m_accountIndex{ };
-		std::string m_strAdapter;
-	};
 	// Factories create login sessions. Each adapter owns its credentials and SDK session.
 	class CCounterFactory final
 	{
-public:
+	public:
 		using _TyStopHandler = std::function<void()>;
-		using _TyFactory = std::function<std::shared_ptr<ITradeCounter>(const CCounterConfig&)>;
+		using _TyFactory = std::function<std::shared_ptr<ITradeSession>(const CCounterConfig&)>;
 
 		bool Register(const std::string& strKey, _TyFactory factory, _TyStopHandler stop = {})
 		{
@@ -37,7 +33,7 @@ public:
 			return m_factory.contains(key);
 		}
 
-		std::shared_ptr<ITradeCounter> Create(const CCounterConfig& config) const
+		std::shared_ptr<ITradeSession> Create(const CCounterConfig& config) const
 		{
 			const auto mIter = m_factory.find(config.m_strAdapter);
 			return m_factory.end() == mIter ? nullptr : mIter->second(config);
@@ -51,7 +47,7 @@ public:
 			}
 		}
 
-private:
+	private:
 		std::unordered_map<std::string, _TyFactory> m_factory;
 		std::vector<_TyStopHandler> m_stoppers;
 	};

@@ -1,19 +1,19 @@
 #pragma once
-#include "ITradeCounter.h"
+#include "ITradeSession.h"
 #include "../database/IDataBase.h"
 
 namespace trade
 {
 	class CStorager final : public ICounterStore
 	{
-		public:
+	public:
 		explicit CStorager(std::string strOwner);
 		CResult Acquire(CState& state) override;
 		CResult Commit(const CState& state, std::uint64_t nExpectedSequence) override;
 		CResult Renew() override;
 		void Release() override;
 
-		private:
+	private:
 		bool CheckFence(db::IDataBase& session, bool bAcquire);
 		std::string m_strOwner;
 		std::uint64_t m_fence{ 0 };
