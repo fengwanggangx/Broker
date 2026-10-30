@@ -8,7 +8,7 @@ class CSimulatedDispatcher;
 class CSimulatedSession final : public trade::ITradeSession
 {
 public:
-	CSimulatedSession(std::shared_ptr<CSimulatedDispatcher> dispatcher, const _TyAccount& account, std::uint64_t instance);
+	CSimulatedSession(CSimulatedDispatcher* dispatcher, const _TyAccount& account, std::uint64_t instance);
 	~CSimulatedSession() override;
 	void Close() override;
 	trade::CAccountData Snapshot() const override;
@@ -17,7 +17,7 @@ public:
 	void Publish(const trade::CCountEvent& event);
 
 private:
-	std::shared_ptr<CSimulatedDispatcher> m_dispatcher;
+	CSimulatedDispatcher* m_pDispatcher; // Borrowed; the dispatcher closes sessions before destruction.
 	_TyAccount m_account;
 	std::uint64_t m_instance;
 	mutable std::mutex m_mtx_state;

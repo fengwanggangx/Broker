@@ -225,7 +225,7 @@ namespace
 			{
 				promise->set_value(reply);
 			}).Ok(),
-				  "request receipt");
+				"request receipt");
 			pump();
 			Check(std::future_status::ready == future.wait_for(std::chrono::seconds(3)), "async completion");
 			return future.get();
@@ -279,7 +279,7 @@ namespace
 		Check(counter.Execute(cancel, 1200).m_result.Ok(), "terminal cancel idempotent");
 		counter.Stop();
 		std::shared_ptr<CMemory> asyncMemory = std::make_shared<CMemory>();
-		std::shared_ptr<CSimulatedDispatcher> dispatcher = std::make_shared<CSimulatedDispatcher>();
+		std::unique_ptr<CSimulatedDispatcher> dispatcher = std::make_unique<CSimulatedDispatcher>();
 		CSimulatedDispatcher& gateway = *dispatcher;
 		asyncMemory->m_bFail = true;
 		Check(!gateway.Start(std::make_unique<CStore>(asyncMemory), []()
@@ -288,20 +288,20 @@ namespace
 		}, {}, {}, {})
 					  .Ok() &&
 				  !asyncMemory->m_bLease,
-			  "failed start releases dispatcher storage lease");
+			"failed start releases dispatcher storage lease");
 		asyncMemory->m_bFail = false;
 		Check(gateway.Start(std::make_unique<CStore>(asyncMemory), []()
 		{
 			return 1100;
 		}, { { TestAccount(1), 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
 				  .Ok(),
-			  "gateway start");
+			"gateway start");
 		Check(!gateway.Start(std::make_unique<CStore>(std::make_shared<CMemory>()), []()
 		{
 			return 1100;
 		}, {}, {}, {})
-				   .Ok(),
-			  "duplicate dispatcher start rejected");
+				  .Ok(),
+			"duplicate dispatcher start rejected");
 		gateway.OnMarketState(true);
 		std::shared_ptr<ITradeSession> session = dispatcher->Create({ TestAccount(1), "simulated" });
 		Contract(*session, []()
@@ -315,7 +315,7 @@ namespace
 			return 1100;
 		}, { { TestAccount(1), 2000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
 				  .Ok(),
-			  "dispatcher restart");
+			"dispatcher restart");
 		Check(2000000 == gateway.Snapshot(TestAccount(1)).m_account.m_nBalance && gateway.Snapshot(TestAccount(1)).m_orders.empty(), "restart uses fresh store");
 		gateway.Stop();
 		gateway.Stop();
@@ -326,15 +326,32 @@ namespace
 		});
 	}
 
+	void DispatcherDestruction()
+	{
+		std::shared_ptr<ITradeSession> session;
+		{
+			CSimulatedDispatcher dispatcher;
+			Check(dispatcher.Start(std::make_unique<CStore>(std::make_shared<CMemory>()), []()
+			{
+				return 1100;
+			}, { { TestAccount(1), 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
+					  .Ok(),
+				"stack dispatcher starts");
+			session = dispatcher.Create({ TestAccount(1), "simulated" });
+		}
+		Check(!session->Snapshot().m_bReady && !session->SendRequest(Request(Operation::Funds), {}).Ok(), "session detached by dispatcher destructor");
+		session->Close();
+	}
+
 	void SessionIsolation()
 	{
-		std::shared_ptr<CSimulatedDispatcher> dispatcher = std::make_shared<CSimulatedDispatcher>();
+		std::unique_ptr<CSimulatedDispatcher> dispatcher = std::make_unique<CSimulatedDispatcher>();
 		Check(dispatcher->Start(std::make_unique<CStore>(std::make_shared<CMemory>()), []()
 		{
 			return 1100;
 		}, { { TestAccount(1), 1000000, 0, false, true }, { TestAccount(2), 2000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
 				  .Ok(),
-			  "session dispatcher start");
+			"session dispatcher start");
 		dispatcher->OnMarketState(true);
 		std::shared_ptr<ITradeSession> first = dispatcher->Create({ TestAccount(1), "simulated" });
 		std::shared_ptr<ITradeSession> second = dispatcher->Create({ TestAccount(2), "simulated" });
@@ -346,7 +363,7 @@ namespace
 			{
 				promise->set_value(reply);
 			}).Ok(),
-				  "session request queued");
+				"session request queued");
 			Check(std::future_status::ready == future.wait_for(std::chrono::seconds(3)), "session response completed");
 			return future.get();
 		};
@@ -358,7 +375,7 @@ namespace
 		{
 			++mismatchedReplies;
 		}).Ok() && 0 == mismatchedReplies.load(),
-			  "account mismatch rejected without callback");
+			"account mismatch rejected without callback");
 		Check(send(first, Request(Operation::Submit)).m_result.Ok(), "active order created");
 		Check(!send(first, Request(Operation::Disconnect)).m_result.Ok(), "active order prevents business disconnect");
 		Check(first->Snapshot().m_account.m_bConnected, "failed disconnect keeps session usable");
@@ -378,7 +395,7 @@ namespace
 			entered.set_value();
 			released.wait_for(std::chrono::seconds(3));
 		}).Ok(),
-			  "block worker for deterministic retirement");
+			"block worker for deterministic retirement");
 		Check(std::future_status::ready == entered.get_future().wait_for(std::chrono::seconds(3)), "worker barrier reached");
 		std::promise<CCounterReply> retired;
 		std::future<CCounterReply> retiredReply = retired.get_future();
@@ -388,7 +405,7 @@ namespace
 			++completions;
 			retired.set_value(reply);
 		}).Ok(),
-			  "old session request queued");
+			"old session request queued");
 		std::shared_ptr<ITradeSession> replacement = dispatcher->Create({ TestAccount(2), "simulated" });
 		release.set_value();
 		Check(std::future_status::ready == retiredReply.wait_for(std::chrono::seconds(3)) && !retiredReply.get().m_result.Ok(), "queued old instance is rejected");
@@ -402,16 +419,18 @@ namespace
 			{
 				++pending;
 			}).Ok(),
-				  "shutdown request accepted");
+				"shutdown request accepted");
 		}
 		dispatcher->Stop();
 		Check(64 == pending.load(), "shutdown completes every accepted request");
+		Check(nullptr == dispatcher->Create({ TestAccount(1), "simulated" }), "stopped dispatcher cannot create sessions");
+		dispatcher.reset();
 		Check(!replacement->Snapshot().m_bReady && !replacement->SendRequest(Request(Operation::Funds, TestAccount(2)), {}).Ok(), "stopped dispatcher rejects requests");
 	}
 
 	void DemandSubscriptions()
 	{
-		std::shared_ptr<CSimulatedDispatcher> dispatcher = std::make_shared<CSimulatedDispatcher>();
+		std::unique_ptr<CSimulatedDispatcher> dispatcher = std::make_unique<CSimulatedDispatcher>();
 		CSimulatedDispatcher& gateway = *dispatcher;
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::atomic_int64_t now{ 1100 };
@@ -433,7 +452,7 @@ namespace
 			return now.load();
 		}, { { TestAccount(1), 1000000, 0, false, true }, { TestAccount(2), 1000000, 0, false, true } }, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
 				  .Ok(),
-			  "demand gateway start");
+			"demand gateway start");
 		auto handler = [&](const std::string& security, bool subscribe)
 		{
 			if (subscribe && 0 < subscriptionFailures.load())
@@ -460,7 +479,7 @@ namespace
 			{
 				promise->set_value(reply);
 			}).Ok(),
-				  "demand request queued");
+				"demand request queued");
 			Check(std::future_status::ready == future.wait_for(std::chrono::seconds(3)), "demand reply received");
 			return future.get();
 		};
@@ -471,7 +490,7 @@ namespace
 			{
 				return subscriptions.size() >= count;
 			}),
-				  "subscription transition received");
+				"subscription transition received");
 			Check(count == subscriptions.size() && "600000.SSE" == subscriptions.back().first && subscribe == subscriptions.back().second, "expected demand transition");
 		};
 		Check(send(Request(Operation::Connect)).m_result.Ok(), "first account connected");
@@ -513,7 +532,7 @@ namespace
 			return now.load();
 		}, {}, { Rule(1) }, { { 1, 1000, 2000, 3000, 4000 } })
 				  .Ok(),
-			  "recover pending order");
+			"recover pending order");
 		gateway.SetDepthSubscriptionHandler(handler);
 		gateway.OnMarketState(true);
 		wait(8, true);
@@ -671,6 +690,7 @@ int main()
 		Boundaries();
 		DemandSubscriptions();
 		SessionIsolation();
+		DispatcherDestruction();
 		std::cout << "counter tests passed\n";
 		return 0;
 	}

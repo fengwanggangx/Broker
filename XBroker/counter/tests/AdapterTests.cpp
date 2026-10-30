@@ -91,10 +91,14 @@ private:
 int main()
 {
 	trade::CCounterFactory registry;
+	int nStops = 0;
 	std::shared_ptr<CDeferredBroker> adapter = std::make_shared<CDeferredBroker>();
 	if (!registry.Register("fake", [adapter](const trade::CCounterConfig&)
 	{
 		return adapter;
+	}, [&nStops]()
+	{
+		++nStops;
 	}) ||
 		nullptr != registry.Create({ TestAccount(1), "missing" }))
 	{
@@ -136,5 +140,11 @@ int main()
 		return 4;
 	}
 	gateway->Close();
+	registry.Stop();
+	registry.Stop();
+	if (1 != nStops || registry.Contains("fake") || nullptr != registry.Create({ TestAccount(7), "fake" }))
+	{
+		return 5;
+	}
 	std::cout << "adapter contract passed\n";
 }

@@ -69,23 +69,51 @@ namespace trade::zhongtai
 		{
 			m_api->Stop();
 		}
+		std::vector<std::shared_ptr<CZhongTaiSession>> sessions;
+		{
+			std::lock_guard<std::mutex> lock(m_mtx_counters);
+			for (const auto& item : m_counters)
+			{
+				std::shared_ptr<CZhongTaiSession> session = item.second.lock();
+				if (nullptr != session)
+				{
+					sessions.emplace_back(std::move(session));
+				}
+			}
+			m_counters.clear();
+			m_instances.clear();
+		}
+		for (const auto& session : sessions)
+		{
+			session->Close();
+		}
 	}
 
 	std::shared_ptr<ITradeSession> CZhongTaiDispatcher::Create(const CCounterConfig& config)
 	{
-		std::lock_guard<std::mutex> lock(m_mtx_counters);
-		std::shared_ptr<CZhongTaiSession> counter = std::make_shared<CZhongTaiSession>(shared_from_this(), config.m_accountIndex, ++m_nextInstance);
+		std::lock_guard<std::mutex> stopLock(m_mtx_stop);
+		{
+			std::lock_guard<std::mutex> lock(m_mtx_queue);
+			if (m_stopping)
+			{
+				return nullptr;
+			}
+		}
+		std::unique_lock<std::mutex> lock(m_mtx_counters);
+		std::shared_ptr<CZhongTaiSession> counter = std::make_shared<CZhongTaiSession>(this, config.m_accountIndex, ++m_nextInstance);
+		std::shared_ptr<CZhongTaiSession> retired;
 		const auto previous = m_counters.find(config.m_accountIndex);
 		if (m_counters.end() != previous)
 		{
-			std::shared_ptr<CZhongTaiSession> retired = previous->second.lock();
-			if (nullptr != retired)
-			{
-				retired->Close();
-			}
+			retired = previous->second.lock();
 		}
 		m_counters.insert_or_assign(config.m_accountIndex, counter);
 		m_instances.insert_or_assign(config.m_accountIndex, m_nextInstance);
+		lock.unlock();
+		if (nullptr != retired)
+		{
+			retired->Close();
+		}
 		return counter;
 	}
 

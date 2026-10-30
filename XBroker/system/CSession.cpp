@@ -74,6 +74,13 @@ void CSession::Stop()
 	NotifyState(SessionState::Disconnected, "HQMarket session stopped");
 }
 
+void CSession::ClearHandlers()
+{
+	std::lock_guard<std::mutex> lock(m_mtx_handlers);
+	m_handlers.clear();
+	m_stateHandlers.clear();
+}
+
 bool CSession::SendRequest(const CRequest& request)
 {
 	_TyRequest t = request.GetType();

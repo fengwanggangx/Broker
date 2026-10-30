@@ -47,7 +47,7 @@ enum class SessionState
 
 class CSession final
 {
-	public:
+public:
 	using _TyResponseHandler = std::function<void(const CRequest&)>;
 	using _TyStateHandler = std::function<void(SessionState, const std::string&)>;
 
@@ -58,6 +58,8 @@ class CSession final
 
 	bool Start();
 	void Stop();
+	// Call only after Stop has drained the network and session threads.
+	void ClearHandlers();
 	bool SendRequest(const CRequest& request);
 	void RegisterHandler(_TyResponseHandler&& handler);
 	void RegisterStateHandler(_TyStateHandler&& handler);
@@ -66,7 +68,7 @@ class CSession final
 	bool IsConnected() const;
 	bool IsAuthenticated() const;
 
-	private:
+private:
 	void ConnectionLoop();
 	void MaintenanceLoop();
 	int OnNetEvent(const net::CNetEvent& ev);
@@ -76,11 +78,11 @@ class CSession final
 	void NotifyState(SessionState state, const std::string& strMessage);
 	void Dispatch(const CRequest& req);
 
-	private:
+private:
 	std::mutex m_mtx_client;
 	std::unique_ptr<net::CTcpClient> m_client;
 
-	private:
+private:
 	std::atomic_bool m_bStopping{ false };
 	std::atomic<SessionState> m_state{ SessionState::Disconnected };
 

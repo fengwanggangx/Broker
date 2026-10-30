@@ -10,7 +10,7 @@
 #include <set>
 namespace trade::zhongtai
 {
-	class CZhongTaiDispatcher final : public std::enable_shared_from_this<CZhongTaiDispatcher>
+	class CZhongTaiDispatcher final
 	{
 	public:
 		CZhongTaiDispatcher(CConfig config, std::unique_ptr<IZhongTaiApi> api, std::unique_ptr<IZhongTaiStore> store);

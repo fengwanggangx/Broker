@@ -19,24 +19,25 @@ namespace net
 		using _TyHandler = std::function<int(const CNetEvent&)>;
 		using _TyDistributor = CDistributor<true, std::vector<CNetEvent>, _TyHandler>;
 
-		public:
+	public:
 		explicit CTcpServer(int nPort);
 		~CTcpServer() override;
 
-		public:
+	public:
 		void OnListenerError(struct evconnlistener* pListener);
 
 		int Initialize();
 		void Drain();
+		void ClearHandlers();
 
 		void RegisterHandler(_TyHandler&& func);
 
-		public:
+	public:
 		void OnConnAccept(struct evconnlistener* pListener, _TyConnectionId id, struct sockaddr* pAddr, int nLength) override;
 		std::size_t OnRead(struct bufferevent* pEvent) override;
 		void OnEvent(struct bufferevent* pEvent, short events) override;
 
-		private:
+	private:
 		int m_nPort{ -1 };
 		std::unique_ptr<_TyDistributor> m_dispatcher;
 	};

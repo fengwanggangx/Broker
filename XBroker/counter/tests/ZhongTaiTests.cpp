@@ -236,7 +236,7 @@ namespace
 		{
 			promise->set_value(reply);
 		}).Ok(),
-			  "request enqueued");
+			"request enqueued");
 		Check(std::future_status::ready == future.wait_for(std::chrono::seconds(4)), "request callback completed");
 		return future.get();
 	}
@@ -299,7 +299,7 @@ namespace
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::unique_ptr<CApi> api = std::make_unique<CApi>();
 		CApi* fake = api.get();
-		std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
+		std::unique_ptr<CZhongTaiDispatcher> gateway = std::make_unique<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
 		gateway->Start();
 		_TyAccount a{ 1, "000123" }, b{ 2, "000123" };
 		std::shared_ptr<ITradeSession> first = gateway->Create({ a, "zhongtai_xtp" }), second = gateway->Create({ b, "zhongtai_xtp" });
@@ -417,7 +417,7 @@ namespace
 		std::uint64_t sequence = memory->m_data[a].sequence();
 		Check(0 < sequence && 4 == memory->m_data[a].orders_size(), "durable journal preserved");
 		std::unique_ptr<CApi> restartApi = std::make_unique<CApi>();
-		std::shared_ptr<CZhongTaiDispatcher> restarted = std::make_shared<CZhongTaiDispatcher>(config, std::move(restartApi), std::make_unique<CStore>(memory));
+		std::unique_ptr<CZhongTaiDispatcher> restarted = std::make_unique<CZhongTaiDispatcher>(config, std::move(restartApi), std::make_unique<CStore>(memory));
 		restarted->Start();
 		std::shared_ptr<ITradeSession> recovered = restarted->Create({ a, "zhongtai_xtp" });
 		Check(Send(recovered, Request(a, Operation::Login)).m_result.Ok(), "restart recovery");
@@ -431,7 +431,7 @@ namespace
 		config.m_queryIntervalMs = 0;
 		config.m_refreshMs = 60000;
 		config.m_sites = { { 1, "primary", "host-a", "", 1 }, { 2, "secondary", "host-b", "", 2 } };
-		std::shared_ptr<CZhongTaiDispatcher> dispatcher = std::make_shared<CZhongTaiDispatcher>(config, std::make_unique<CApi>(), std::make_unique<CStore>(std::make_shared<CMemory>()));
+		std::unique_ptr<CZhongTaiDispatcher> dispatcher = std::make_unique<CZhongTaiDispatcher>(config, std::make_unique<CApi>(), std::make_unique<CStore>(std::make_shared<CMemory>()));
 		dispatcher->Start();
 		_TyAccount a{ 1, "000123" }, b{ 2, "000123" };
 		std::shared_ptr<ITradeSession> first = dispatcher->Create({ a, "zhongtai_xtp" });
@@ -443,7 +443,7 @@ namespace
 		{
 			++rejectedCallbacks;
 		}).Ok() && 0 == rejectedCallbacks.load(),
-			  "mismatch rejected without callback");
+			"mismatch rejected without callback");
 		Check(Send(first, Request(a, Operation::Disconnect)).m_result.Ok(), "business disconnect acknowledged");
 		first->Close();
 		Check(!first->Snapshot().m_bReady && !first->SendRequest(Request(a, Operation::Funds), {}).Ok(), "closed account unavailable");
@@ -456,7 +456,24 @@ namespace
 		{
 			++rejectedCallbacks;
 		}).Ok() && 0 == rejectedCallbacks.load(),
-			  "stopped dispatcher rejects without callback");
+			"stopped dispatcher rejects without callback");
+		Check(nullptr == dispatcher->Create({ a, "zhongtai_xtp" }), "stopped dispatcher cannot create sessions");
+		dispatcher.reset();
+		Check(!replacement->SendRequest(Request(a, Operation::Funds), {}).Ok() && !replacement->Snapshot().m_bReady, "session remains safely closed after dispatcher destruction");
+	}
+
+	void DispatcherDestruction()
+	{
+		std::shared_ptr<ITradeSession> session;
+		_TyAccount account{ 1, "000123" };
+		{
+			CConfig config;
+			CZhongTaiDispatcher dispatcher(config, std::make_unique<CApi>(), std::make_unique<CStore>(std::make_shared<CMemory>()));
+			dispatcher.Start();
+			session = dispatcher.Create({ account, "zhongtai_xtp" });
+		}
+		Check(!session->SendRequest(Request(account, Operation::Funds), {}).Ok() && !session->Snapshot().m_bReady, "session detached by dispatcher destructor");
+		session->Close();
 	}
 
 	void Failures()
@@ -468,7 +485,7 @@ namespace
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::unique_ptr<CApi> api = std::make_unique<CApi>();
 		CApi* fake = api.get();
-		std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
+		std::unique_ptr<CZhongTaiDispatcher> gateway = std::make_unique<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
 		gateway->Start();
 		_TyAccount account{ 1, "000999" };
 		std::shared_ptr<ITradeSession> counter = gateway->Create({ account, "zhongtai_xtp" });
@@ -498,7 +515,7 @@ namespace
 		std::shared_ptr<CMemory> memory = std::make_shared<CMemory>();
 		std::unique_ptr<CApi> api = std::make_unique<CApi>();
 		CApi* fake = api.get();
-		std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
+		std::unique_ptr<CZhongTaiDispatcher> gateway = std::make_unique<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
 		gateway->Start();
 		_TyAccount account{ 1, "001" };
 		std::shared_ptr<ITradeSession> counter = gateway->Create({ account, "zhongtai_xtp" });
@@ -519,6 +536,7 @@ int main()
 		Run();
 		Failures();
 		SessionLifecycle();
+		DispatcherDestruction();
 		Overflow();
 		std::cout << "ZhongTai adapter tests passed\n";
 		return 0;

@@ -5,20 +5,27 @@
 #include "../common/container.h"
 std::shared_ptr<trade::ITradeSession> CSimulatedDispatcher::Create(const trade::CCounterConfig& config)
 {
+	std::lock_guard<std::mutex> lifecycleLock(m_mtx_lifecycle);
+	if (m_bStopping)
+	{
+		return nullptr;
+	}
 	const _TyAccount& account = config.m_accountIndex;
-	std::lock_guard<std::mutex> lock(m_mtx_state);
+	std::unique_lock<std::mutex> lock(m_mtx_state);
 	std::uint64_t instance = ++m_nextInstance;
-	std::shared_ptr<CSimulatedSession> session = std::make_shared<CSimulatedSession>(shared_from_this(), account, instance);
+	std::shared_ptr<CSimulatedSession> session = std::make_shared<CSimulatedSession>(this, account, instance);
+	std::shared_ptr<CSimulatedSession> retired;
 	const auto previous = m_sessions.find(account);
 	if (m_sessions.end() != previous)
 	{
-		std::shared_ptr<CSimulatedSession> retired = previous->second.m_session.lock();
-		if (nullptr != retired)
-		{
-			retired->Close();
-		}
+		retired = previous->second.m_session.lock();
 	}
 	m_sessions.insert_or_assign(account, CSessionSlot{ instance, session });
+	lock.unlock();
+	if (nullptr != retired)
+	{
+		retired->Close();
+	}
 	return session;
 }
 
@@ -347,6 +354,22 @@ void CSimulatedDispatcher::Stop()
 	if (m_worker.joinable())
 	{
 		m_worker.join();
+	}
+	std::vector<std::shared_ptr<CSimulatedSession>> sessions;
+	{
+		std::lock_guard<std::mutex> lock(m_mtx_state);
+		for (const auto& item : m_sessions)
+		{
+			std::shared_ptr<CSimulatedSession> session = item.second.m_session.lock();
+			if (nullptr != session)
+			{
+				sessions.emplace_back(std::move(session));
+			}
+		}
+	}
+	for (const auto& session : sessions)
+	{
+		session->Close();
 	}
 	std::lock_guard<std::mutex> lock(m_mtx_state);
 	if (nullptr != m_counter)

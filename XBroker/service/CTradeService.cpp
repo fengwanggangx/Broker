@@ -135,6 +135,13 @@ void CTradeService::Stop()
 		}
 	}
 	m_counterFactory.Stop();
+	{
+		std::lock_guard<std::mutex> lock(m_mtx_accounts);
+		m_accounts.clear();
+		m_logging.clear();
+		m_retired.clear();
+	}
+	m_handler_push = {};
 }
 
 const std::string& CTradeService::GetLastError() const

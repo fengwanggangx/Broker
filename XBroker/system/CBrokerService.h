@@ -3,6 +3,7 @@
 
 #include "../service/CTradeService.h"
 #include "../network/common_net.h"
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -12,6 +13,11 @@ namespace net
 	class CTcpServer;
 }
 class CSession;
+class CSimulatedDispatcher;
+namespace trade::zhongtai
+{
+	class CZhongTaiDispatcher;
+}
 
 class CBrokerService final
 {
@@ -21,6 +27,7 @@ public:
 	CBrokerService(const CBrokerService& arg) = delete;
 	CBrokerService& operator=(const CBrokerService& arg) = delete;
 
+	void Stop();
 	bool Initialize();
 	const std::string& GetLastError() const;
 
@@ -31,6 +38,9 @@ private:
 	trade::CResult InitializeCounters();
 
 private:
+	// Dispatchers outlive the trader and all borrowed callbacks; Stop controls teardown.
+	std::unique_ptr<CSimulatedDispatcher> m_simulatedDispatcher;
+	std::unique_ptr<trade::zhongtai::CZhongTaiDispatcher> m_zhongTaiDispatcher;
 	CTradeService m_trader;
 	std::string m_strToken;
 	std::string m_strLastError;

@@ -23,6 +23,7 @@ int main()
 			std::cerr << boot.GetLastError() << '\n';
 			return boot.GetErrorCode();
 		}
+		brokerService.Stop();
 	}
 	boot.Finalize();
 	return 0;

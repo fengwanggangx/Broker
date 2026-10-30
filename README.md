@@ -49,3 +49,5 @@ python tests/check_contracts.py
 深度行情按活动委托订阅：同一证券的首笔有效委托触发订阅，未收到有效盘口前等待撮合；全部委托成交、撤销或过期后退订。多个账户共享证券订阅，重连及账本恢复时按未完成委托重建订阅，发送失败会重试。交易规则不再作为预订阅清单。
 
 中泰传统 XTP 2.2.50.8 原生接入见 [中泰适配器说明](XBroker/counter/zhongtai/README.md)。默认禁用，通过 `XBROKER_ENABLE_XTP` 和独立 SDK 路径启用；不自动连接或交易。
+
+Dispatcher 由 `CBrokerService` 以 `unique_ptr` 独占，Session 与工厂、行情回调只借用裸指针。退出调用 `CBrokerService::Stop()`：停止 TCP 并排空请求，停止行情线程并清除回调，关闭账户会话，停止 Dispatcher 并等待工作线程和 SDK 回调结束，清理工厂和账户引用，最后销毁 Dispatcher。Dispatcher 自身退出也会关闭残留 Session 并清空其裸指针，关闭后的 Session 不再访问 Dispatcher。

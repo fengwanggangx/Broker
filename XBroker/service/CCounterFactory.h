@@ -23,7 +23,15 @@ namespace trade
 			}
 			if (nullptr != stop)
 			{
-				m_stoppers.emplace_back(std::move(stop));
+				try
+				{
+					m_stoppers.emplace_back(std::move(stop));
+				}
+				catch (...)
+				{
+					m_factory.erase(strKey);
+					throw;
+				}
 			}
 			return true;
 		}
@@ -45,6 +53,8 @@ namespace trade
 			{
 				stop();
 			}
+			m_stoppers.clear();
+			m_factory.clear();
 		}
 
 	private:

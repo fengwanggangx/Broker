@@ -2,7 +2,7 @@
 #include "CZhongTaiDispatcher.h"
 namespace trade::zhongtai
 {
-	CZhongTaiSession::CZhongTaiSession(std::shared_ptr<CZhongTaiDispatcher> dispatcher, const _TyAccount& account, std::uint64_t instance) : m_dispatcher(std::move(dispatcher)), m_account(account), m_instance(instance)
+	CZhongTaiSession::CZhongTaiSession(CZhongTaiDispatcher* dispatcher, const _TyAccount& account, std::uint64_t instance) : m_pDispatcher(dispatcher), m_account(account), m_instance(instance)
 	{
 		m_snapshot.m_account.m_accountIndex = account;
 		m_snapshot.m_account.m_bFundsValid = false;
@@ -21,6 +21,7 @@ namespace trade::zhongtai
 				return;
 			}
 			m_stopped = true;
+			m_pDispatcher = nullptr;
 			m_handler = {};
 			m_snapshot.m_bReady = false;
 		}
@@ -37,14 +38,12 @@ namespace trade::zhongtai
 
 	CResult CZhongTaiSession::SendRequest(CReqParam request, _TyReplyHandler handler)
 	{
+		std::lock_guard<std::mutex> lock(m_mtx_state);
+		if (m_stopped || m_account != request.m_accountIndex)
 		{
-			std::lock_guard<std::mutex> lock(m_mtx_state);
-			if (m_stopped || m_account != request.m_accountIndex)
-			{
-				return { Error::Rejected, "stopped counter or account mismatch" };
-			}
+			return { Error::Rejected, "stopped counter or account mismatch" };
 		}
-		return m_dispatcher->Send(std::move(request), std::move(handler), m_instance);
+		return m_pDispatcher->Send(std::move(request), std::move(handler), m_instance);
 	}
 
 	CAccountData CZhongTaiSession::Snapshot() const

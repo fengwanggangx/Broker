@@ -12,7 +12,7 @@ class CRequest;
 class CSession;
 enum class SessionState;
 
-class CSimulatedDispatcher final : public trade::IMarketInput, public std::enable_shared_from_this<CSimulatedDispatcher>
+class CSimulatedDispatcher final : public trade::IMarketInput
 {
 public:
 	using _TyClock = std::function<std::int64_t()>;

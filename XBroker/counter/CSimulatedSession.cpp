@@ -1,7 +1,7 @@
 #include "CSimulatedSession.h"
 #include "CSimulatedDispatcher.h"
 
-CSimulatedSession::CSimulatedSession(std::shared_ptr<CSimulatedDispatcher> dispatcher, const _TyAccount& account, std::uint64_t instance) : m_dispatcher(std::move(dispatcher)), m_account(account), m_instance(instance)
+CSimulatedSession::CSimulatedSession(CSimulatedDispatcher* dispatcher, const _TyAccount& account, std::uint64_t instance) : m_pDispatcher(dispatcher), m_account(account), m_instance(instance)
 {
 }
 
@@ -14,6 +14,7 @@ void CSimulatedSession::Close()
 {
 	std::lock_guard<std::mutex> lock(m_mtx_state);
 	m_closed = true;
+	m_pDispatcher = nullptr;
 	m_handler = {};
 }
 
@@ -28,26 +29,22 @@ void CSimulatedSession::SetEventHandler(_TyEventHandler handler)
 
 trade::CAccountData CSimulatedSession::Snapshot() const
 {
+	std::lock_guard<std::mutex> lock(m_mtx_state);
+	if (m_closed)
 	{
-		std::lock_guard<std::mutex> lock(m_mtx_state);
-		if (m_closed)
-		{
-			return {};
-		}
+		return {};
 	}
-	return m_dispatcher->IsCurrent(m_account, m_instance) ? m_dispatcher->Snapshot(m_account) : trade::CAccountData{};
+	return m_pDispatcher->IsCurrent(m_account, m_instance) ? m_pDispatcher->Snapshot(m_account) : trade::CAccountData{};
 }
 
 trade::CResult CSimulatedSession::SendRequest(trade::CReqParam request, _TyReplyHandler handler)
 {
+	std::lock_guard<std::mutex> lock(m_mtx_state);
+	if (m_closed || m_account != request.m_accountIndex)
 	{
-		std::lock_guard<std::mutex> lock(m_mtx_state);
-		if (m_closed || m_account != request.m_accountIndex)
-		{
-			return { trade::Error::Rejected, "closed session or account mismatch" };
-		}
+		return { trade::Error::Rejected, "closed session or account mismatch" };
 	}
-	return m_dispatcher->Send(std::move(request), std::move(handler), m_instance);
+	return m_pDispatcher->Send(std::move(request), std::move(handler), m_instance);
 }
 
 void CSimulatedSession::Publish(const trade::CCountEvent& event)

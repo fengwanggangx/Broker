@@ -8,7 +8,7 @@
 #include <set>
 namespace trade::zhongtai
 {
-	CResult Initialize(CCounterFactory& factory)
+	CResult Initialize(CCounterFactory& factory, std::unique_ptr<CZhongTaiDispatcher>& dispatcher)
 	{
 		std::string path = ini::CINIHandler::InstanceRef().GetValue(ini::Config::System, "Trade", "zhongtai_path", std::string());
 		if (path.empty())
@@ -98,13 +98,14 @@ namespace trade::zhongtai
 			}
 			std::filesystem::create_directories(config.m_logPath);
 			std::unique_ptr<IZhongTaiApi> api = CreateZhongTaiApi(config);
-			std::shared_ptr<CZhongTaiDispatcher> gateway = std::make_shared<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CZhongTaiStore>(utility::MakeSaltHex()));
+			std::unique_ptr<CZhongTaiDispatcher> gateway = std::make_unique<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CZhongTaiStore>(utility::MakeSaltHex()));
 			gateway->Start();
-			if (!factory.Register("zhongtai_xtp", std::bind_front(&CZhongTaiDispatcher::Create, gateway), std::bind_front(&CZhongTaiDispatcher::Stop, gateway)))
+			if (!factory.Register("zhongtai_xtp", std::bind_front(&CZhongTaiDispatcher::Create, gateway.get()), std::bind_front(&CZhongTaiDispatcher::Stop, gateway.get())))
 			{
 				gateway->Stop();
 				return { Error::Conflict, "duplicate ZhongTai registration" };
 			}
+			dispatcher = std::move(gateway);
 			return {};
 		}
 		catch (const std::exception& error)

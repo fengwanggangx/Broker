@@ -110,6 +110,14 @@ namespace net
 		return 0;
 	}
 
+	void CTcpServer::ClearHandlers()
+	{
+		if (nullptr != m_dispatcher)
+		{
+			m_dispatcher->ClearHandlers();
+		}
+	}
+
 	void CTcpServer::RegisterHandler(_TyHandler&& func)
 	{
 		if (nullptr != m_dispatcher)

@@ -7,7 +7,7 @@ namespace trade::zhongtai
 	class CZhongTaiSession final : public ITradeSession
 	{
 	public:
-		CZhongTaiSession(std::shared_ptr<CZhongTaiDispatcher> dispatcher, const _TyAccount& account, std::uint64_t instance);
+		CZhongTaiSession(CZhongTaiDispatcher* dispatcher, const _TyAccount& account, std::uint64_t instance);
 		~CZhongTaiSession() override;
 		void Close() override;
 		void SetEventHandler(_TyEventHandler handler) override;
@@ -17,7 +17,7 @@ namespace trade::zhongtai
 		void SetSnapshot(const CAccountData& snapshot);
 
 	private:
-		std::shared_ptr<CZhongTaiDispatcher> m_dispatcher;
+		CZhongTaiDispatcher* m_pDispatcher; // Borrowed; the dispatcher closes sessions before destruction.
 		_TyAccount m_account;
 		std::uint64_t m_instance;
 		mutable std::mutex m_mtx_state;
