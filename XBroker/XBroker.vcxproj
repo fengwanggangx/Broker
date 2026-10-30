@@ -230,12 +230,11 @@
     <ClCompile Include="counter\zhongtai\CZhongTaiDispatcher.cpp" />
     <ClCompile Include="counter\zhongtai\CZhongTaiStore.cpp" />
     <ClCompile Include="counter\zhongtai\ZhongTaiConvert.cpp" />
-    <ClCompile Include="counter\zhongtai\ZhongTaiSetup.cpp" />
+    <ClCompile Include="counter\zhongtai\CZhongTaiDispatcherInitialize.cpp" />
     <ClInclude Include="counter\zhongtai\CZhongTaiSession.h" />
     <ClInclude Include="counter\zhongtai\CZhongTaiDispatcher.h" />
     <ClInclude Include="counter\zhongtai\CZhongTaiStore.h" />
     <ClInclude Include="counter\zhongtai\ZhongTaiConvert.h" />
-    <ClInclude Include="counter\zhongtai\ZhongTaiSetup.h" />
     <ClInclude Include="counter\zhongtai\ZhongTaiTypes.h" />
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(XBrokerEnableXtp)'=='true'">

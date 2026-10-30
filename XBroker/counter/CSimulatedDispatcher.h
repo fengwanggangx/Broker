@@ -24,9 +24,10 @@ public:
 	std::shared_ptr<trade::ITradeSession> Create(const trade::CCounterConfig& config);
 	bool IsCurrent(const _TyAccount& account, std::uint64_t instance) const;
 
+	void Stop();
+	trade::CResult Initialize();
 	trade::CResult Start(const std::vector<trade::CAccount>& accounts, const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar);
 	trade::CResult Start(std::unique_ptr<trade::ICounterStore> store, _TyClock&& clock, const std::vector<trade::CAccount>& accounts, const std::vector<trade::CRule>& rules, const std::vector<trade::CCalendar>& calendar);
-	void Stop();
 
 	trade::CResult Send(trade::CReqParam request, _TyReplyHandler handler, std::uint64_t instance);
 	trade::CAccountData Snapshot(const _TyAccount& accountIndex) const;

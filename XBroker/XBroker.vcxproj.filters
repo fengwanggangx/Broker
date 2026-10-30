@@ -339,12 +339,11 @@
     <ClCompile Include="counter\zhongtai\CZhongTaiDispatcher.cpp"><Filter>counter</Filter></ClCompile>
     <ClCompile Include="counter\zhongtai\CZhongTaiStore.cpp"><Filter>counter</Filter></ClCompile>
     <ClCompile Include="counter\zhongtai\ZhongTaiConvert.cpp"><Filter>counter</Filter></ClCompile>
-    <ClCompile Include="counter\zhongtai\ZhongTaiSetup.cpp"><Filter>counter</Filter></ClCompile>
+    <ClCompile Include="counter\zhongtai\CZhongTaiDispatcherInitialize.cpp"><Filter>counter</Filter></ClCompile>
     <ClInclude Include="counter\zhongtai\CZhongTaiSession.h"><Filter>counter</Filter></ClInclude>
     <ClInclude Include="counter\zhongtai\CZhongTaiDispatcher.h"><Filter>counter</Filter></ClInclude>
     <ClInclude Include="counter\zhongtai\CZhongTaiStore.h"><Filter>counter</Filter></ClInclude>
     <ClInclude Include="counter\zhongtai\ZhongTaiConvert.h"><Filter>counter</Filter></ClInclude>
-    <ClInclude Include="counter\zhongtai\ZhongTaiSetup.h"><Filter>counter</Filter></ClInclude>
     <ClInclude Include="counter\zhongtai\ZhongTaiTypes.h"><Filter>counter</Filter></ClInclude>
   </ItemGroup>
 </Project>

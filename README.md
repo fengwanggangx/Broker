@@ -51,3 +51,5 @@ python tests/check_contracts.py
 中泰传统 XTP 2.2.50.8 原生接入见 [中泰适配器说明](XBroker/counter/zhongtai/README.md)。默认禁用，通过 `XBROKER_ENABLE_XTP` 和独立 SDK 路径启用；不自动连接或交易。
 
 Dispatcher 由 `CBrokerService` 以 `unique_ptr` 独占，Session 与工厂、行情回调只借用裸指针。退出调用 `CBrokerService::Stop()`：停止 TCP 并排空请求，停止行情线程并清除回调，关闭账户会话，停止 Dispatcher 并等待工作线程和 SDK 回调结束，清理工厂和账户引用，最后销毁 Dispatcher。Dispatcher 自身退出也会关闭残留 Session 并清空其裸指针，关闭后的 Session 不再访问 Dispatcher。
+
+Dispatcher 各自提供 `Initialize()`：模拟柜台读取并校验 `Trade.rules_path`，创建存储并启动工作线程；中泰柜台读取并校验 `Trade.zhongtai_path`，创建 API、存储并启动工作线程。未配置中泰路径时初始化成功但不启动、不注册中泰适配器。`CBrokerService` 负责创建和持有 Dispatcher、注册工厂及连接外部行情回调；测试仍可注入 API、存储和时钟后调用 `Start()`。

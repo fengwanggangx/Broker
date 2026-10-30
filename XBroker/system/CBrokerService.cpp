@@ -1,5 +1,4 @@
 #include "CBrokerService.h"
-#include "../counter/zhongtai/ZhongTaiSetup.h"
 #include "../counter/zhongtai/CZhongTaiDispatcher.h"
 #include "../counter/CSimulatedDispatcher.h"
 #include "CSession.h"
@@ -10,77 +9,6 @@
 #include "../common/container.h"
 #include <vector>
 #include <functional>
-#include <rapidjson/document.h>
-#include <fstream>
-#include <iterator>
-
-namespace
-{
-	bool Integer(const rapidjson::Value& value, const char* pName, std::int64_t& nValue)
-	{
-		if (!value.HasMember(pName) || !value[pName].IsInt64())
-		{
-			return false;
-		}
-		nValue = value[pName].GetInt64();
-		return true;
-	}
-
-	bool Text(const rapidjson::Value& value, const char* pName, std::string& strValue)
-	{
-		if (!value.HasMember(pName) || !value[pName].IsString())
-		{
-			return false;
-		}
-		strValue.assign(value[pName].GetString(), value[pName].GetStringLength());
-		return true;
-	}
-
-	trade::CResult ReadRules(const std::string& strPath, std::vector<trade::CRule>& rules, std::vector<trade::CCalendar>& calendar)
-	{
-		if (strPath.empty())
-		{
-			return {};
-		} // Safe default: account queries work, all orders lack rules and are rejected.
-		std::ifstream stream(strPath);
-		if (!stream.is_open())
-		{
-			return { trade::Error::Rejected, "cannot open Trade.rules_path" };
-		}
-		std::string strJson((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
-		rapidjson::Document document;
-		document.Parse(strJson.data(), strJson.size());
-		if (document.HasParseError() || !document.IsObject() || !document.HasMember("rules") || !document["rules"].IsArray() || !document.HasMember("calendar") || !document["calendar"].IsArray())
-		{
-			return { trade::Error::Rejected, "invalid counter rules JSON" };
-		}
-		for (const auto& value : document["calendar"].GetArray())
-		{
-			trade::CCalendar day;
-			std::int64_t nDay = 0;
-			if (!value.IsObject() || !Integer(value, "day", nDay) || (0 >= nDay) || (99991231 < nDay) || !Integer(value, "open_ms", day.m_nOpen) || !Integer(value, "break_ms", day.m_nBreak) || !Integer(value, "resume_ms", day.m_nResume) || !Integer(value, "close_ms", day.m_nClose))
-			{
-				return { trade::Error::Rejected, "calendar requires explicit day and epoch-millisecond sessions" };
-			}
-			day.m_nDay = static_cast<int>(nDay);
-			calendar.emplace_back(day);
-		}
-		for (const auto& value : document["rules"].GetArray())
-		{
-			trade::CRule rule;
-			std::int64_t nDay = 0, nScale = 0;
-			if (!value.IsObject() || !Text(value, "version", rule.m_strVersion) || !Text(value, "security", rule.m_strSecurity) || !Text(value, "board", rule.m_strBoard) || !Integer(value, "day", nDay) || (0 >= nDay) || (99991231 < nDay) || !Integer(value, "price_scale", nScale) || (0 > nScale) || (6 < nScale) || !Integer(value, "tick", rule.m_nTick) || !Integer(value, "buy_minimum", rule.m_nBuyMinimum) || !Integer(value, "buy_step", rule.m_nBuyStep) || !Integer(value, "sell_minimum", rule.m_nSellMinimum) || !Integer(value, "sell_step", rule.m_nSellStep) || !Integer(value, "lower", rule.m_nLower) || !Integer(value, "upper", rule.m_nUpper) || !Integer(value, "commission_ppm", rule.m_nCommissionPpm) || !Integer(value, "minimum_fee_cents", rule.m_nMinimumFee) || !Integer(value, "sell_tax_ppm", rule.m_nSellTaxPpm) || !Integer(value, "transfer_ppm", rule.m_nTransferPpm) || !value.HasMember("corporate_action") || !value["corporate_action"].IsBool())
-			{
-				return { trade::Error::Rejected, "security rule fields must be explicit" };
-			}
-			rule.m_nDay = static_cast<int>(nDay);
-			rule.m_nPriceScale = static_cast<int>(nScale);
-			rule.m_bCorporateAction = value["corporate_action"].GetBool();
-			rules.emplace_back(std::move(rule));
-		}
-		return {};
-	}
-} // namespace
 
 CBrokerService::CBrokerService(net::CTcpServer* pTcpServer, CSession* pSession) : m_pTcpServer(pTcpServer), m_pSession(pSession)
 {
@@ -147,37 +75,43 @@ bool CBrokerService::Initialize()
 
 trade::CResult CBrokerService::InitializeCounters()
 {
-	std::string strRulesPath = ini::CINIHandler::InstanceRef().GetValue(ini::Config::System, "Trade", "rules_path", std::string());
 	CSession& session = *m_pSession;
 	trade::CCounterFactory& creator = m_trader.CounterFactory();
-	std::vector<trade::CRule> rules;
-	std::vector<trade::CCalendar> calendar;
-	trade::CResult result = ReadRules(strRulesPath, rules, calendar);
-	if (!result.Ok())
-	{
-		return result;
-	}
 	if (creator.Contains("simulated"))
 	{
 		return { trade::Error::Rejected, "Duplicate simulated counter registration" };
 	}
 	m_dispatcher_simulated = std::make_unique<CSimulatedDispatcher>();
-	CSimulatedDispatcher* dispatcher = m_dispatcher_simulated.get();
-	result = dispatcher->Start({}, rules, calendar);
+	trade::CResult result = m_dispatcher_simulated->Initialize();
 	if (!result.Ok())
 	{
 		return result;
 	}
-	session.RegisterHandler(std::bind_front(&CSimulatedDispatcher::OnMarketResponse, dispatcher));
-	dispatcher->SetDepthSubscriptionHandler(std::bind_front(&CSimulatedDispatcher::ChangeDepthSubscription, dispatcher, std::ref(session)));
-	session.RegisterStateHandler(std::bind_front(&CSimulatedDispatcher::OnSessionState, dispatcher));
-	dispatcher->OnSessionState(session.IsAuthenticated() ? SessionState::Ready : SessionState::Disconnected, "");
-	if (!creator.Register("simulated", std::bind_front(&CSimulatedDispatcher::Create, dispatcher), std::bind_front(&CSimulatedDispatcher::Stop, dispatcher)))
+	session.RegisterHandler(std::bind_front(&CSimulatedDispatcher::OnMarketResponse, m_dispatcher_simulated.get()));
+	m_dispatcher_simulated->SetDepthSubscriptionHandler(std::bind_front(&CSimulatedDispatcher::ChangeDepthSubscription, m_dispatcher_simulated.get(), std::ref(session)));
+	session.RegisterStateHandler(std::bind_front(&CSimulatedDispatcher::OnSessionState, m_dispatcher_simulated.get()));
+	m_dispatcher_simulated->OnSessionState(session.IsAuthenticated() ? SessionState::Ready : SessionState::Disconnected, "");
+	if (!creator.Register("simulated", std::bind_front(&CSimulatedDispatcher::Create, m_dispatcher_simulated.get()), std::bind_front(&CSimulatedDispatcher::Stop, m_dispatcher_simulated.get())))
 	{
-		dispatcher->Stop();
+		m_dispatcher_simulated->Stop();
 		return { trade::Error::Rejected, "Duplicate simulated adapter registration" };
 	}
-	return trade::zhongtai::Initialize(creator, m_dispatcher_zhongtai);
+	if (creator.Contains("zhongtai_xtp"))
+	{
+		return { trade::Error::Conflict, "Duplicate ZhongTai adapter registration" };
+	}
+	m_dispatcher_zhongtai = std::make_unique<CZhongTaiDispatcher>();
+	result = m_dispatcher_zhongtai->Initialize();
+	if (!result.Ok())
+	{
+		return result;
+	}
+	if (m_dispatcher_zhongtai->IsInitialized() && !creator.Register("zhongtai_xtp", std::bind_front(&CZhongTaiDispatcher::Create, m_dispatcher_zhongtai.get()), std::bind_front(&CZhongTaiDispatcher::Stop, m_dispatcher_zhongtai.get())))
+	{
+		m_dispatcher_zhongtai->Stop();
+		return { trade::Error::Conflict, "Duplicate ZhongTai adapter registration" };
+	}
+	return {};
 }
 
 void CBrokerService::Broadcast(const CRequest& push)

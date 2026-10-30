@@ -11,10 +11,13 @@
 class CZhongTaiDispatcher final
 {
 public:
+	CZhongTaiDispatcher() = default;
 	CZhongTaiDispatcher(trade::zhongtai::CConfig config, std::unique_ptr<trade::zhongtai::IZhongTaiApi> api, std::unique_ptr<trade::zhongtai::IZhongTaiStore> store);
 	~CZhongTaiDispatcher();
 	void Stop();
 	void Start();
+	bool IsInitialized() const;
+	trade::CResult Initialize();
 	void Receive(trade::zhongtai::CApiEvent event);
 	bool IsCurrent(const _TyAccount& account, std::uint64_t instance);
 	std::shared_ptr<trade::ITradeSession> Create(const trade::CCounterConfig& config);

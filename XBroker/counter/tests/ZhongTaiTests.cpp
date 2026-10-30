@@ -301,6 +301,8 @@ namespace
 		CApi* fake = api.get();
 		std::unique_ptr<CZhongTaiDispatcher> gateway = std::make_unique<CZhongTaiDispatcher>(config, std::move(api), std::make_unique<CStore>(memory));
 		gateway->Start();
+		Check(gateway->IsInitialized(), "started dispatcher is initialized");
+		Check(Error::Conflict == gateway->Initialize().m_error, "initialization preserves a running injected dispatcher");
 		_TyAccount a{ 1, "000123" }, b{ 2, "000123" };
 		std::shared_ptr<ITradeSession> first = gateway->Create({ a, "zhongtai_xtp" }), second = gateway->Create({ b, "zhongtai_xtp" });
 		Check(Send(first, Request(a, Operation::Login)).m_result.Ok(), "first login and synchronization");
